@@ -12,6 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from gemini_live import GeminiLive
+from progress_tracker import PASTA_STEPS, PastaProgressMemory, ProgressStateStore
+
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SSL_CERTFILE = os.path.join(SERVER_DIR, "ssl", "cert.pem")
+DEFAULT_SSL_KEYFILE = os.path.join(SERVER_DIR, "ssl", "key.pem")
 
 # Load environment variables
 load_dotenv()
@@ -50,8 +55,10 @@ LIVE_VOICE_NAME = os.getenv("LIVE_VOICE_NAME", "Zephyr")
 LIVE_SYSTEM_PROMPT = os.getenv(
     "LIVE_SYSTEM_PROMPT",
     (
-        "You are an AI assistant that teaches users how to cook pasta. "
-        "Provide practical, step-by-step guidance with clear timings."
+        "You are a pasta-cooking coach. Follow this sequence exactly: "
+        + " ".join(f"{idx}) {text}" for idx, text in enumerate(PASTA_STEPS, start=1))
+        + " Guide one step at a time, ask for brief confirmation before moving on, "
+        "and keep track of the current step."
     ),
 )
 LIVE_ENGLISH_ONLY = os.getenv("LIVE_ENGLISH_ONLY", "1").lower() not in {
@@ -59,6 +66,8 @@ LIVE_ENGLISH_ONLY = os.getenv("LIVE_ENGLISH_ONLY", "1").lower() not in {
     "false",
     "no",
 }
+
+progress_store = ProgressStateStore()
 
 
 def configure_logging(verbose_count: int = 0):
@@ -88,6 +97,11 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/")
 async def root():
     return FileResponse("frontend/index.html")
+
+
+@app.get("/api/progress")
+async def progress():
+    return progress_store.get()
 
 
 @app.websocket("/ws")
@@ -193,6 +207,11 @@ async def websocket_endpoint(websocket: WebSocket):
     async def run_session():
         restart_count = 0
         resume_handle = None
+        memory_tracker = PastaProgressMemory()
+        initial_progress = progress_store.set_from_memory(memory_tracker)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"type": "progress", "progress": initial_progress})
+        pending_user_transcript = []
         while not stop_event.is_set():
             restart_count += 1
             if restart_count > 1:
@@ -215,6 +234,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         }
                     )
                 await asyncio.sleep(SESSION_RESTART_DELAY_SECONDS)
+
+            # Reinforce progress memory at the start of each model session.
+            checkpoint_message = memory_tracker.build_checkpoint_message(force=True)
+            if checkpoint_message:
+                await text_input_queue.put(checkpoint_message)
 
             try:
                 logger.info(
@@ -241,6 +265,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     if event.get("type") == "go_away":
                         logger.info("Gemini go_away received (time_left=%s)", event.get("time_left"))
                         continue
+                    if event.get("type") == "user" and event.get("text"):
+                        pending_user_transcript.append(event["text"])
+                    if event.get("type") == "turn_complete" and pending_user_transcript:
+                        merged_user_turn = "".join(pending_user_transcript).strip()
+                        pending_user_transcript.clear()
+                        if memory_tracker.observe_user_turn(merged_user_turn):
+                            progress_payload = progress_store.set_from_memory(
+                                memory_tracker
+                            )
+                            checkpoint_message = memory_tracker.build_checkpoint_message(
+                                force=True
+                            )
+                            if checkpoint_message:
+                                await text_input_queue.put(checkpoint_message)
+                                logger.debug(
+                                    "Updated pasta memory checkpoint for step %s",
+                                    memory_tracker.current_step,
+                                )
+                            with contextlib.suppress(Exception):
+                                await websocket.send_json(
+                                    {"type": "progress", "progress": progress_payload}
+                                )
                     if event.get("type") == "error":
                         error_msg = event.get("error", "")
                         logger.warning("Gemini session error: %s", error_msg)
@@ -275,7 +321,15 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="Gemini Live FastAPI server")
+    parser = argparse.ArgumentParser(
+        description="Gemini Live FastAPI server",
+        add_help=False,
+    )
+    parser.add_argument(
+        "--help",
+        action="help",
+        help="Show this help message and exit",
+    )
     parser.add_argument(
         "-v",
         "--verbose",
@@ -284,24 +338,39 @@ if __name__ == "__main__":
         help="Increase logging verbosity (-v for debug app logs)",
     )
     parser.add_argument(
+        "-h",
         "--host",
         default=os.getenv("HOST", "localhost"),
         help="Host to bind",
     )
     parser.add_argument(
+        "-p",
         "--port",
         type=int,
         default=int(os.getenv("PORT", 8000)),
         help="Port to bind",
     )
+    parser.add_argument(
+        "--ssl-certfile",
+        default=os.getenv("SSL_CERTFILE", DEFAULT_SSL_CERTFILE),
+        help="Path to TLS certificate file (enables HTTPS when set with --ssl-keyfile)",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        default=os.getenv("SSL_KEYFILE", DEFAULT_SSL_KEYFILE),
+        help="Path to TLS private key file (enables HTTPS when set with --ssl-certfile)",
+    )
     args = parser.parse_args()
 
     configure_logging(args.verbose)
-    logger.info("Starting server host=%s port=%s", args.host, args.port)
+    scheme = "https" if args.ssl_certfile and args.ssl_keyfile else "http"
+    logger.info("Starting server host=%s port=%s scheme=%s", args.host, args.port, scheme)
 
     uvicorn.run(
         app,
         host=args.host,
         port=args.port,
         log_level="debug" if args.verbose else "info",
+        ssl_certfile=args.ssl_certfile,
+        ssl_keyfile=args.ssl_keyfile,
     )

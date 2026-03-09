@@ -81,10 +81,26 @@ class MediaHandler {
     }
   }
 
-  async startVideo(videoElement, onFrame) {
+  async startVideo(
+    videoElement,
+    onFrame,
+    facingMode = "user",
+    requireExactFacing = false
+  ) {
     try {
+      if (this.videoStream) {
+        this.stopVideo(videoElement);
+      }
+
+      const videoConstraint =
+        facingMode && typeof facingMode === "string"
+          ? requireExactFacing
+            ? { facingMode: { exact: facingMode } }
+            : { facingMode: { ideal: facingMode } }
+          : true;
+
       this.videoStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: videoConstraint,
       });
       videoElement.srcObject = this.videoStream;
 

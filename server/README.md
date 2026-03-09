@@ -34,6 +34,9 @@ Open your browser and navigate to:
 - **FastAPI Backend**: Robust, async-ready web server handling WebSocket connections.
 - **Real-time Streaming**: Bi-directional audio and video streaming.
 - **Continuous Session Recovery**: Automatically restarts Live sessions when they time out, with resumption handles when available.
+- **Explicit Text Memory**: Persists pasta step progress via internal text checkpoints so compression is less likely to lose current step.
+- **Progress API + UI**: `GET /api/progress` exposes step statuses (`done`, `in_progress`, `wait`) and the main UI shows them live.
+- **Dedicated Progress Module**: `progress_tracker.py` contains memory logic and shared progress state store.
 - **Tool Use**: Demonstrates how to register and handle server-side tools.
 - **Vanilla JS Frontend**: Lightweight frontend with no build steps or framework dependencies.
 

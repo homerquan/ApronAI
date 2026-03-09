@@ -27,8 +27,14 @@ class GeminiLive:
         api_version="v1",
         voice_name="Zephyr",
         system_instruction_text=(
-            "You are an AI assistant that teaches users how to cook pasta. "
-            "Provide practical, step-by-step guidance with clear timings."
+            "You are a pasta-cooking coach. Follow this sequence exactly: "
+            "1) Bring a pot of water to a rolling boil. "
+            "2) Add salt, then add pasta. "
+            "3) Stir and cook until al dente. "
+            "4) Reserve a little pasta water, then drain. "
+            "5) Combine with sauce and finish for 1-2 minutes. "
+            "Guide one step at a time, ask for brief confirmation before moving on, "
+            "and keep track of the current step."
         ),
         english_only=True,
     ):
@@ -192,11 +198,20 @@ class GeminiLive:
             async def send_text():
                 try:
                     while True:
-                        text = await text_input_queue.get()
+                        item = await text_input_queue.get()
+                        if isinstance(item, dict):
+                            text = item.get("text", "")
+                            end_of_turn = bool(item.get("end_of_turn", True))
+                        else:
+                            text = str(item)
+                            end_of_turn = True
+                        if not text:
+                            continue
                         await outgoing_queue.put(
                             {
                                 "kind": "text",
                                 "text": text,
+                                "end_of_turn": end_of_turn,
                             }
                         )
                 except asyncio.CancelledError:
@@ -222,7 +237,10 @@ class GeminiLive:
                                 )
                             )
                         elif kind == "text":
-                            await session.send(input=message["text"], end_of_turn=True)
+                            await session.send(
+                                input=message["text"],
+                                end_of_turn=bool(message.get("end_of_turn", True)),
+                            )
                 except asyncio.CancelledError:
                     pass
 

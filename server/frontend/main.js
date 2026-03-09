@@ -7,6 +7,7 @@ const sessionEndSection = document.getElementById("session-end-section");
 const restartBtn = document.getElementById("restartBtn");
 const micBtn = document.getElementById("micBtn");
 const cameraBtn = document.getElementById("cameraBtn");
+const backCameraBtn = document.getElementById("backCameraBtn");
 const screenBtn = document.getElementById("screenBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const textInput = document.getElementById("textInput");
@@ -15,9 +16,28 @@ const videoPreview = document.getElementById("video-preview");
 const videoPlaceholder = document.getElementById("video-placeholder");
 const connectBtn = document.getElementById("connectBtn");
 const chatLog = document.getElementById("chat-log");
+const progressList = document.getElementById("progress-list");
+const progressUpdated = document.getElementById("progress-updated");
 
 let currentGeminiMessageDiv = null;
 let currentUserMessageDiv = null;
+let preferredCameraFacingMode = "user";
+
+function sendCameraFrame(base64Data) {
+  if (geminiClient.isConnected()) {
+    geminiClient.sendImage(base64Data);
+  }
+}
+const defaultProgress = {
+  updated_at: null,
+  steps: [
+    { step: 1, text: "Bring a pot of water to a rolling boil.", status: "wait" },
+    { step: 2, text: "Add salt, then add pasta.", status: "wait" },
+    { step: 3, text: "Stir and cook until al dente.", status: "wait" },
+    { step: 4, text: "Reserve a little pasta water, then drain.", status: "wait" },
+    { step: 5, text: "Combine with sauce and finish for 1-2 minutes.", status: "wait" },
+  ],
+};
 
 const mediaHandler = new MediaHandler();
 const geminiClient = new GeminiClient({
@@ -26,14 +46,11 @@ const geminiClient = new GeminiClient({
     statusDiv.className = "status connected";
     authSection.classList.add("hidden");
     appSection.classList.remove("hidden");
+    loadProgress();
 
     // Send hidden instruction
     geminiClient.sendText(
-      `System: Introduce yourself as a demo of the Gemini Live API.
-       Suggest playing with features like the native audio for accents, multilingual support,
-        proactive audio by asking you not to speak until I say something specific,
-        or the affective audio capabilities by changing the emotion in your voice to
-        match the tone of the conversation. Keep the intro concise and friendly.`
+      `System: You are an AI assistant that teaches users how to cook pasta. Provide practical, step-by-step guidance with clear timings.`
     );
   },
   onMessage: (event) => {
@@ -66,6 +83,8 @@ function handleJsonMessage(msg) {
     mediaHandler.stopAudioPlayback();
     currentGeminiMessageDiv = null;
     currentUserMessageDiv = null;
+  } else if (msg.type === "progress" && msg.progress) {
+    renderProgress(msg.progress);
   } else if (msg.type === "session_restarting") {
     const mode = msg.resuming ? "resuming context" : "starting fresh context";
     statusDiv.textContent = `Connected (restarting model session, ${mode})`;
@@ -96,6 +115,54 @@ function handleJsonMessage(msg) {
     }
   }
 }
+
+function formatStatus(status) {
+  if (status === "in_progress") return "in progress";
+  return status;
+}
+
+function formatUpdatedTime(unixTs) {
+  if (!unixTs) return "Not started yet";
+  const date = new Date(unixTs * 1000);
+  return `Updated ${date.toLocaleTimeString()}`;
+}
+
+function renderProgress(progress) {
+  if (!progress || !Array.isArray(progress.steps)) return;
+  progressList.innerHTML = "";
+
+  for (const step of progress.steps) {
+    const row = document.createElement("div");
+    row.className = `progress-item ${step.status}`;
+
+    const stepText = document.createElement("div");
+    stepText.className = "progress-step-text";
+    stepText.textContent = `Step ${step.step}: ${step.text}`;
+
+    const status = document.createElement("div");
+    status.className = `progress-status ${step.status}`;
+    status.textContent = formatStatus(step.status);
+
+    row.appendChild(stepText);
+    row.appendChild(status);
+    progressList.appendChild(row);
+  }
+
+  progressUpdated.textContent = formatUpdatedTime(progress.updated_at);
+}
+
+async function loadProgress() {
+  try {
+    const response = await fetch("/api/progress", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    renderProgress(payload);
+  } catch (error) {
+    console.error("Failed to load progress:", error);
+  }
+}
+
+renderProgress(defaultProgress);
 
 function appendMessage(type, text) {
   const msgDiv = document.createElement("div");
@@ -151,6 +218,7 @@ cameraBtn.onclick = async () => {
   if (cameraBtn.textContent === "Stop Camera") {
     mediaHandler.stopVideo(videoPreview);
     cameraBtn.textContent = "Start Camera";
+    preferredCameraFacingMode = "user";
     screenBtn.textContent = "Share Screen";
     videoPlaceholder.classList.remove("hidden");
   } else {
@@ -161,17 +229,36 @@ cameraBtn.onclick = async () => {
     }
 
     try {
-      await mediaHandler.startVideo(videoPreview, (base64Data) => {
-        if (geminiClient.isConnected()) {
-          geminiClient.sendImage(base64Data);
-        }
-      });
+      await mediaHandler.startVideo(
+        videoPreview,
+        sendCameraFrame,
+        preferredCameraFacingMode
+      );
       cameraBtn.textContent = "Stop Camera";
       screenBtn.textContent = "Share Screen";
       videoPlaceholder.classList.add("hidden");
     } catch (e) {
       alert("Could not access camera");
     }
+  }
+};
+
+backCameraBtn.onclick = async () => {
+  preferredCameraFacingMode = "environment";
+  if (cameraBtn.textContent !== "Stop Camera") {
+    return;
+  }
+
+  try {
+    await mediaHandler.startVideo(
+      videoPreview,
+      sendCameraFrame,
+      "environment",
+      true
+    );
+    videoPlaceholder.classList.add("hidden");
+  } catch (e) {
+    // Intentionally no-op when back camera is unavailable.
   }
 };
 
@@ -236,8 +323,10 @@ function resetUI() {
 
   micBtn.textContent = "Start Mic";
   cameraBtn.textContent = "Start Camera";
+  preferredCameraFacingMode = "user";
   screenBtn.textContent = "Share Screen";
   chatLog.innerHTML = "";
+  renderProgress(defaultProgress);
   connectBtn.disabled = false;
 }
 
