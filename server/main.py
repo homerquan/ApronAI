@@ -99,6 +99,11 @@ async def root():
     return FileResponse("frontend/index.html")
 
 
+@app.get("/eval")
+async def eval_frontend():
+    return FileResponse("frontend/eval.html")
+
+
 @app.get("/api/progress")
 async def progress():
     return progress_store.get()

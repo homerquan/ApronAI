@@ -28,6 +28,11 @@ Open your browser and navigate to:
 
 [http://localhost:8000](http://localhost:8000)
 
+Routes:
+
+- `/` - new WebXR AR frontend (HUD + progress + backend session controls)
+- `/eval` - existing evaluation frontend (camera/chat UI)
+
 ### 3. Mobile HTTPS/WSS (camera + mic)
 
 For mobile devices, use HTTPS and a cert that includes your server LAN IP in SAN.

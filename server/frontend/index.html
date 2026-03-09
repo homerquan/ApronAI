@@ -3,143 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gemini Live API Demo</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <title>ApronAI AR</title>
+    <link rel="stylesheet" href="/static/ar-style.css" />
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h1>Gemini Live API Demo</h1>
-        <div style="display: flex; gap: 10px; align-items: center">
-          <div id="status" class="status disconnected">Disconnected</div>
+    <div class="ar-shell">
+      <header class="top-bar">
+        <div>
+          <h1>ApronAI AR Coach</h1>
+          <p class="subhead">
+            WebXR HUD + Gemini Live. Use <a href="/eval">/eval</a> for the
+            existing evaluation frontend.
+          </p>
         </div>
+        <div id="status" class="status disconnected">Disconnected</div>
       </header>
 
-      <main>
-        <div class="auth-section" id="auth-section">
-          <button id="toggleFeaturesBtn" class="btn link-btn compact hidden">
-            Show Features
-          </button>
-          <div id="featureDetails" class="description-box">
-            <h3>Features Enabled:</h3>
-            <ul class="feature-list">
-              <li>
-                <strong>Native Audio:</strong> Low latency voice interaction
-              </li>
-              <li>
-                <strong>Multilingual:</strong> Speak in different languages
-              </li>
-              <li>
-                <strong>Proactive Audio:</strong> Gemini can initiate speech
-                based on instructions E.g. "Only talk when I mention food"
-              </li>
-              <li><strong>Affective Audio:</strong> Emotional tone matching</li>
-            </ul>
-            <p>
-              <em
-                >Note: When you connect, the app sends a text message to Gemini
-                instructing it to introduce itself and these features.</em
-              >
-            </p>
+      <section class="control-row">
+        <button id="startSessionBtn" class="btn primary">Start Session</button>
+        <div id="arButtonSlot" class="ar-button-slot"></div>
+      </section>
+
+      <section class="help-row">
+        <span id="micFeedStatus" class="help-text">Mic to backend: inactive</span>
+        <span id="cameraFeedStatus" class="help-text"
+          >Camera feed to backend: inactive</span
+        >
+        <span class="help-text"
+          >XR passthrough pixels are not directly exposed; a parallel camera
+          stream is used when available.</span
+        >
+      </section>
+
+      <div id="xr-container" class="xr-container">
+        <section class="hud-panel hud-floating">
+          <div class="hud-header">
+            <h2>Cooking HUD</h2>
+            <span id="progress-updated">Waiting for progress...</span>
           </div>
-          <p>Click below to open the app controls.</p>
-          <button id="connectBtn" class="btn">Open App</button>
-        </div>
-
-        <div class="session-end-section hidden" id="session-end-section">
-          <h2>Session Ended</h2>
-          <button id="restartBtn" class="btn">Start New Session</button>
-        </div>
-
-        <div class="app-section hidden" id="app-section">
-          <div class="session-start-row">
-            <button id="startSessionBtn" class="btn">Start Session</button>
-            <span class="note"
-              >Starts the online AI model only when clicked.</span
-            >
-          </div>
-
-          <div class="mobile-nav" id="mobileNav">
-            <button class="btn mobile-tab active" data-panel="camera">
-              Camera
-            </button>
-            <button class="btn mobile-tab" data-panel="chat">Chat</button>
-            <button class="btn mobile-tab" data-panel="progress">
-              Progress
-            </button>
-          </div>
-
-          <div class="app-grid">
-            <div class="left-panel panel-camera" data-mobile-panel="camera">
-              <div class="video-container">
-                <div id="video-placeholder">Start camera to send video</div>
-                <video id="video-preview" autoplay playsinline muted></video>
-                <canvas id="video-canvas" style="display: none"></canvas>
-              </div>
-
-              <div class="controls">
-                <button id="micBtn" class="btn icon-btn">Start Mic</button>
-                <button id="cameraBtn" class="btn icon-btn">
-                  Start Camera
-                </button>
-                <button id="backCameraBtn" class="btn icon-btn">
-                  Use Back Camera
-                </button>
-                <button id="screenBtn" class="btn icon-btn">
-                  Share Screen
-                </button>
-                <button id="disconnectBtn" class="btn icon-btn danger">
-                  Disconnect
-                </button>
-              </div>
-            </div>
-
-            <div class="right-panel panel-chat" data-mobile-panel="chat">
-              <div class="chat-log" id="chat-log"></div>
-              <div class="input-area">
-                <input
-                  type="text"
-                  id="textInput"
-                  placeholder="Type a message..."
-                />
-                <button id="sendBtn" class="btn">Send</button>
-              </div>
-            </div>
-          </div>
-
-          <section
-            class="progress-panel panel-progress"
-            id="progress-panel"
-            data-mobile-panel="progress"
-          >
-            <div class="progress-panel-header">
-              <h3>Cooking Progress</h3>
-              <span id="progress-updated" class="progress-updated"
-                >Waiting for progress...</span
-              >
-            </div>
-            <div id="progress-list" class="progress-list"></div>
-          </section>
-        </div>
-      </main>
-    </div>
-
-    <div id="permissionModal" class="permission-modal hidden">
-      <div class="permission-dialog">
-        <h3>Enable Audio Access</h3>
-        <p class="note">
-          iOS often needs a direct user action to unlock audio playback and
-          microphone capture.
-        </p>
-        <div class="permission-actions">
-          <button id="permissionAllowBtn" class="btn">Enable Mic + Audio</button>
-          <button id="permissionSkipBtn" class="btn link-btn">Continue Without Mic</button>
-        </div>
-        <div id="permissionStatus" class="note"></div>
+          <div id="progress-list" class="progress-list"></div>
+        </section>
       </div>
+      <section class="transcript-strip">
+        <div id="transcript-history" class="transcript-history"></div>
+        <div id="transcript-current" class="transcript-current">
+          Waiting for AI transcript...
+        </div>
+      </section>
+      <video id="camera-source" class="hidden-media" autoplay playsinline muted></video>
+      <canvas id="camera-canvas" class="hidden-media"></canvas>
     </div>
-    <script src="/static/media-handler.js"></script>
+
     <script src="/static/gemini-client.js"></script>
-    <script src="/static/main.js"></script>
+    <script src="/static/media-handler.js"></script>
+    <script type="module" src="/static/ar-main.js"></script>
   </body>
 </html>
