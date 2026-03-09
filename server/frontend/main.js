@@ -15,17 +15,144 @@ const sendBtn = document.getElementById("sendBtn");
 const videoPreview = document.getElementById("video-preview");
 const videoPlaceholder = document.getElementById("video-placeholder");
 const connectBtn = document.getElementById("connectBtn");
+const startSessionBtn = document.getElementById("startSessionBtn");
+const permissionModal = document.getElementById("permissionModal");
+const permissionAllowBtn = document.getElementById("permissionAllowBtn");
+const permissionSkipBtn = document.getElementById("permissionSkipBtn");
+const permissionStatus = document.getElementById("permissionStatus");
 const chatLog = document.getElementById("chat-log");
 const progressList = document.getElementById("progress-list");
 const progressUpdated = document.getElementById("progress-updated");
+const mobileNav = document.getElementById("mobileNav");
+const mobileTabs = document.querySelectorAll(".mobile-tab");
+const mobilePanels = document.querySelectorAll("[data-mobile-panel]");
+const toggleFeaturesBtn = document.getElementById("toggleFeaturesBtn");
+const featureDetails = document.getElementById("featureDetails");
 
 let currentGeminiMessageDiv = null;
 let currentUserMessageDiv = null;
 let preferredCameraFacingMode = "user";
+let activeMobilePanel = "camera";
+let sessionConnectRequested = false;
+let modelSessionActive = false;
+let startupTimeoutId = null;
+let permissionPromptCompleted = false;
+let startSessionRetryId = null;
+let startSessionAttemptCount = 0;
+
+function clearStartupTimeout() {
+  if (startupTimeoutId) {
+    clearTimeout(startupTimeoutId);
+    startupTimeoutId = null;
+  }
+}
+
+function clearStartSessionRetry() {
+  if (startSessionRetryId) {
+    clearInterval(startSessionRetryId);
+    startSessionRetryId = null;
+  }
+  startSessionAttemptCount = 0;
+}
+
+function sendStartSessionSignal() {
+  if (!sessionConnectRequested || modelSessionActive) {
+    return;
+  }
+  if (!geminiClient.isConnected()) {
+    return;
+  }
+  startSessionAttemptCount += 1;
+  geminiClient.startSession();
+}
+
+function beginStartSessionHandshake() {
+  clearStartSessionRetry();
+  sendStartSessionSignal();
+  startSessionRetryId = setInterval(() => {
+    sendStartSessionSignal();
+  }, 1000);
+}
+
+function armStartupTimeout() {
+  clearStartupTimeout();
+  startupTimeoutId = setTimeout(() => {
+    if (modelSessionActive) {
+      return;
+    }
+    sessionConnectRequested = false;
+    startSessionBtn.disabled = false;
+    startSessionBtn.textContent = "Start Session";
+    statusDiv.textContent =
+      "Start timed out. Trust the HTTPS cert for this IP, then retry.";
+    statusDiv.className = "status error";
+    clearStartSessionRetry();
+    if (geminiClient.isConnected()) {
+      geminiClient.disconnect();
+    }
+  }, 12000);
+}
+
+function showPermissionModal() {
+  permissionStatus.textContent = "";
+  permissionModal.classList.remove("hidden");
+}
+
+function hidePermissionModal() {
+  permissionModal.classList.add("hidden");
+}
+
+function setPermissionStatus(message) {
+  permissionStatus.textContent = message || "";
+}
 
 function sendCameraFrame(base64Data) {
   if (geminiClient.isConnected()) {
     geminiClient.sendImage(base64Data);
+  }
+}
+
+function isMobileViewport() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function setMobilePanel(panelName) {
+  activeMobilePanel = panelName;
+  const mobile = isMobileViewport();
+
+  for (const panel of mobilePanels) {
+    if (!mobile) {
+      panel.classList.remove("mobile-panel-hidden");
+      continue;
+    }
+    const name = panel.getAttribute("data-mobile-panel");
+    panel.classList.toggle("mobile-panel-hidden", name !== panelName);
+  }
+
+  for (const tab of mobileTabs) {
+    tab.classList.toggle("active", tab.getAttribute("data-panel") === panelName);
+  }
+}
+
+function updateMobileLayout() {
+  const mobile = isMobileViewport();
+
+  mobileNav.classList.toggle("hidden", !mobile);
+  toggleFeaturesBtn.classList.toggle("hidden", !mobile);
+
+  if (mobile) {
+    if (!toggleFeaturesBtn.dataset.ready) {
+      featureDetails.classList.add("hidden");
+      toggleFeaturesBtn.textContent = "Show Features";
+      toggleFeaturesBtn.dataset.ready = "1";
+    }
+    setMobilePanel(activeMobilePanel);
+  } else {
+    featureDetails.classList.remove("hidden");
+    toggleFeaturesBtn.textContent = "Show Features";
+    for (const panel of mobilePanels) {
+      panel.classList.remove("mobile-panel-hidden");
+    }
   }
 }
 const defaultProgress = {
@@ -42,16 +169,11 @@ const defaultProgress = {
 const mediaHandler = new MediaHandler();
 const geminiClient = new GeminiClient({
   onOpen: () => {
-    statusDiv.textContent = "Connected";
+    statusDiv.textContent = "Connected (starting model session...)";
     statusDiv.className = "status connected";
-    authSection.classList.add("hidden");
-    appSection.classList.remove("hidden");
-    loadProgress();
-
-    // Send hidden instruction
-    geminiClient.sendText(
-      `System: You are an AI assistant that teaches users how to cook pasta. Provide practical, step-by-step guidance with clear timings.`
-    );
+    if (sessionConnectRequested) {
+      beginStartSessionHandshake();
+    }
   },
   onMessage: (event) => {
     if (typeof event.data === "string") {
@@ -67,19 +189,59 @@ const geminiClient = new GeminiClient({
   },
   onClose: (e) => {
     console.log("WS Closed:", e);
+    clearStartupTimeout();
+    clearStartSessionRetry();
+    sessionConnectRequested = false;
+    modelSessionActive = false;
+    startSessionBtn.textContent = "Start Session";
+    startSessionBtn.disabled = false;
     statusDiv.textContent = "Disconnected";
     statusDiv.className = "status disconnected";
     showSessionEnd();
   },
   onError: (e) => {
     console.error("WS Error:", e);
+    clearStartupTimeout();
+    clearStartSessionRetry();
+    sessionConnectRequested = false;
+    startSessionBtn.textContent = "Start Session";
+    startSessionBtn.disabled = false;
     statusDiv.textContent = "Connection Error";
     statusDiv.className = "status error";
   },
 });
 
+function startModelSessionUI() {
+  clearStartupTimeout();
+  clearStartSessionRetry();
+  modelSessionActive = true;
+  sessionConnectRequested = false;
+  startSessionBtn.textContent = "Session Running";
+  startSessionBtn.disabled = true;
+  statusDiv.textContent = "Connected";
+  statusDiv.className = "status connected";
+  loadProgress();
+
+  // Send hidden instruction after the model session starts.
+  geminiClient.sendText(
+    `System: You are an AI assistant that teaches users how to cook pasta. Provide practical, step-by-step guidance with clear timings.`
+  );
+}
+
 function handleJsonMessage(msg) {
-  if (msg.type === "interrupted") {
+  if (msg.type === "ready") {
+    if (!sessionConnectRequested && !modelSessionActive) {
+      statusDiv.textContent = "Connected (ready to start)";
+      statusDiv.className = "status connected";
+      startSessionBtn.disabled = false;
+      startSessionBtn.textContent = "Start Session";
+    } else if (sessionConnectRequested && !modelSessionActive) {
+      // On some mobile stacks, first control frame may be delayed/dropped.
+      sendStartSessionSignal();
+    }
+  } else if (msg.type === "session_started") {
+    startModelSessionUI();
+  } else if (msg.type === "interrupted") {
     mediaHandler.stopAudioPlayback();
     currentGeminiMessageDiv = null;
     currentUserMessageDiv = null;
@@ -164,6 +326,21 @@ async function loadProgress() {
 
 renderProgress(defaultProgress);
 
+for (const tab of mobileTabs) {
+  tab.addEventListener("click", () => {
+    setMobilePanel(tab.getAttribute("data-panel"));
+  });
+}
+
+toggleFeaturesBtn.onclick = () => {
+  if (!isMobileViewport()) return;
+  const isHidden = featureDetails.classList.toggle("hidden");
+  toggleFeaturesBtn.textContent = isHidden ? "Show Features" : "Hide Features";
+};
+
+window.addEventListener("resize", updateMobileLayout);
+updateMobileLayout();
+
 function appendMessage(type, text) {
   const msgDiv = document.createElement("div");
   msgDiv.className = `message ${type}`;
@@ -173,22 +350,92 @@ function appendMessage(type, text) {
   return msgDiv;
 }
 
-// Connect Button Handler
-connectBtn.onclick = async () => {
+// Landing page: only open app UI, do not start model session.
+connectBtn.onclick = () => {
+  authSection.classList.add("hidden");
+  appSection.classList.remove("hidden");
+  sessionEndSection.classList.add("hidden");
+  setMobilePanel("camera");
+  statusDiv.textContent = "Ready (click Start Session)";
+  statusDiv.className = "status disconnected";
+  startSessionBtn.disabled = false;
+  startSessionBtn.textContent = "Start Session";
+};
+
+async function beginSessionStartup() {
+  if (sessionConnectRequested || modelSessionActive) {
+    return;
+  }
+
   statusDiv.textContent = "Connecting...";
-  connectBtn.disabled = true;
+  statusDiv.className = "status disconnected";
+  startSessionBtn.disabled = true;
+  startSessionBtn.textContent = "Starting...";
+  sessionConnectRequested = true;
+  armStartupTimeout();
 
   try {
-    // Initialize audio context on user gesture
-    await mediaHandler.initializeAudio();
-
-    geminiClient.connect();
+    // Keep audio warm-up best effort, but do not block startup.
+    mediaHandler.initializeAudio().catch((error) => {
+      console.warn("Audio initialization failed during startup:", error);
+    });
+    if (!geminiClient.isConnected()) {
+      geminiClient.connect();
+    } else {
+      beginStartSessionHandshake();
+    }
   } catch (error) {
+    clearStartupTimeout();
     console.error("Connection error:", error);
     statusDiv.textContent = "Connection Failed: " + error.message;
     statusDiv.className = "status error";
-    connectBtn.disabled = false;
+    sessionConnectRequested = false;
+    startSessionBtn.disabled = false;
+    startSessionBtn.textContent = "Start Session";
   }
+}
+
+// App page: this starts the online Gemini session.
+startSessionBtn.onclick = async () => {
+  if (!permissionPromptCompleted) {
+    showPermissionModal();
+    return;
+  }
+  await beginSessionStartup();
+};
+
+permissionAllowBtn.onclick = async () => {
+  permissionAllowBtn.disabled = true;
+  permissionSkipBtn.disabled = true;
+  setPermissionStatus("Requesting microphone permission...");
+  try {
+    await mediaHandler.initializeAudio();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Browser does not support microphone capture");
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    permissionPromptCompleted = true;
+    setPermissionStatus("Audio and microphone are enabled.");
+    hidePermissionModal();
+    await beginSessionStartup();
+  } catch (error) {
+    console.error("Permission step failed:", error);
+    setPermissionStatus(
+      "Mic permission was not granted. You can continue without microphone."
+    );
+  } finally {
+    permissionAllowBtn.disabled = false;
+    permissionSkipBtn.disabled = false;
+  }
+};
+
+permissionSkipBtn.onclick = async () => {
+  permissionPromptCompleted = true;
+  hidePermissionModal();
+  await beginSessionStartup();
 };
 
 // UI Controls
@@ -316,6 +563,10 @@ function resetUI() {
   authSection.classList.remove("hidden");
   appSection.classList.add("hidden");
   sessionEndSection.classList.add("hidden");
+  sessionConnectRequested = false;
+  modelSessionActive = false;
+  clearStartupTimeout();
+  clearStartSessionRetry();
 
   mediaHandler.stopAudio();
   mediaHandler.stopVideo(videoPreview);
@@ -324,10 +575,15 @@ function resetUI() {
   micBtn.textContent = "Start Mic";
   cameraBtn.textContent = "Start Camera";
   preferredCameraFacingMode = "user";
+  setMobilePanel("camera");
   screenBtn.textContent = "Share Screen";
   chatLog.innerHTML = "";
   renderProgress(defaultProgress);
   connectBtn.disabled = false;
+  startSessionBtn.disabled = false;
+  startSessionBtn.textContent = "Start Session";
+  statusDiv.textContent = "Disconnected";
+  statusDiv.className = "status disconnected";
 }
 
 function showSessionEnd() {

@@ -115,6 +115,9 @@ async def websocket_endpoint(websocket: WebSocket):
     video_input_queue = asyncio.Queue(maxsize=MAX_VIDEO_QUEUE_SIZE)
     text_input_queue = asyncio.Queue(maxsize=MAX_TEXT_QUEUE_SIZE)
     stop_event = asyncio.Event()
+    session_started = False
+    run_session_task = None
+    receive_task = None
 
     async def put_realtime(queue: asyncio.Queue, payload: bytes, label: str):
         if queue.full():
@@ -169,40 +172,6 @@ async def websocket_endpoint(websocket: WebSocket):
         LIVE_VOICE_NAME,
         LIVE_ENGLISH_ONLY,
     )
-
-    async def receive_from_client():
-        try:
-            while not stop_event.is_set():
-                message = await websocket.receive()
-
-                if message.get("bytes"):
-                    await put_realtime(audio_input_queue, message["bytes"], "audio")
-                elif message.get("text"):
-                    text = message["text"]
-                    try:
-                        payload = json.loads(text)
-                        if isinstance(payload, dict) and payload.get("type") == "image" and payload.get("data"):
-                            image_data = base64.b64decode(payload["data"], validate=True)
-                            await put_realtime(video_input_queue, image_data, "video")
-                            continue
-                        if isinstance(payload, dict) and isinstance(payload.get("text"), str):
-                            await text_input_queue.put(payload["text"])
-                            continue
-                    except json.JSONDecodeError:
-                        pass
-                    except Exception as e:
-                        logger.warning("Failed to parse client payload: %s", e)
-                        continue
-
-                    await text_input_queue.put(text)
-        except WebSocketDisconnect:
-            logger.info("WebSocket disconnected")
-        except Exception as e:
-            logger.error(f"Error receiving from client: {e}")
-        finally:
-            stop_event.set()
-
-    receive_task = asyncio.create_task(receive_from_client())
 
     async def run_session():
         restart_count = 0
@@ -304,15 +273,85 @@ async def websocket_endpoint(websocket: WebSocket):
                 with contextlib.suppress(Exception):
                     await websocket.send_json({"type": "error", "error": str(e)})
 
+    async def start_model_session_if_needed():
+        nonlocal session_started, run_session_task
+        if session_started and run_session_task and not run_session_task.done():
+            return
+        session_started = True
+        run_session_task = asyncio.create_task(run_session())
+        logger.info("Gemini model session started by client request")
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"type": "session_started"})
+
+    async def receive_from_client():
+        try:
+            while not stop_event.is_set():
+                message = await websocket.receive()
+                if message.get("type") == "websocket.disconnect":
+                    logger.info("WebSocket disconnect frame received")
+                    break
+
+                if message.get("bytes"):
+                    if not session_started:
+                        logger.debug("Ignoring audio chunk before start_session")
+                        continue
+                    await put_realtime(audio_input_queue, message["bytes"], "audio")
+                elif message.get("text"):
+                    text = message["text"]
+                    logger.debug("Client text frame: %s", text[:240])
+                    try:
+                        payload = json.loads(text)
+                        if isinstance(payload, dict):
+                            if payload.get("type") == "start_session":
+                                logger.info("Received start_session request from client")
+                                await start_model_session_if_needed()
+                                continue
+                            if payload.get("type") == "image" and payload.get("data"):
+                                if not session_started:
+                                    logger.debug("Ignoring image frame before start_session")
+                                    continue
+                                image_data = base64.b64decode(payload["data"], validate=True)
+                                await put_realtime(video_input_queue, image_data, "video")
+                                continue
+                            if isinstance(payload.get("text"), str):
+                                if not session_started:
+                                    logger.debug("Ignoring text input before start_session")
+                                    continue
+                                await text_input_queue.put(payload["text"])
+                                continue
+                    except json.JSONDecodeError:
+                        pass
+                    except Exception as e:
+                        logger.warning("Failed to parse client payload: %s", e)
+                        continue
+
+                    if session_started:
+                        await text_input_queue.put(text)
+                    else:
+                        logger.debug("Ignoring plain text payload before start_session")
+        except WebSocketDisconnect:
+            logger.info("WebSocket disconnected")
+        except Exception as e:
+            logger.error(f"Error receiving from client: {e}")
+        finally:
+            stop_event.set()
+
+    with contextlib.suppress(Exception):
+        await websocket.send_json({"type": "ready", "session_started": False})
+
     try:
-        await run_session()
-    except Exception as e:
-        logger.error(f"Error in Gemini session: {e}")
+        receive_task = asyncio.create_task(receive_from_client())
+        await receive_task
     finally:
         stop_event.set()
-        receive_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await receive_task
+        if run_session_task:
+            run_session_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await run_session_task
+        if receive_task:
+            receive_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await receive_task
         # Ensure websocket is closed if not already
         with contextlib.suppress(Exception):
             await websocket.close()

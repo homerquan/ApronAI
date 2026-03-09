@@ -1,0 +1,33 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_IMAGE}
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --timeout=3600
+      - --set-env-vars=PROJECT_ID=${_PROJECT_ID},LOCATION=${_LOCATION},MODEL=${_MODEL},LIVE_API_VERSION=v1,LIVE_ENABLE_CONTEXT_WINDOW_COMPRESSION=1
+
+substitutions:
+  _SERVICE: apronai-live
+  _REGION: us-central1
+  _PROJECT_ID: your-gcp-project-id
+  _LOCATION: us-central1
+  _MODEL: gemini-live-2.5-flash-native-audio
+  _IMAGE: us-central1-docker.pkg.dev/${PROJECT_ID}/apronai/apronai-live:latest

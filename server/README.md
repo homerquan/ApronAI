@@ -28,6 +28,85 @@ Open your browser and navigate to:
 
 [http://localhost:8000](http://localhost:8000)
 
+### 3. Mobile HTTPS/WSS (camera + mic)
+
+For mobile devices, use HTTPS and a cert that includes your server LAN IP in SAN.
+
+```bash
+# Regenerate dev cert with auto-detected LAN IPs
+./scripts/generate_dev_cert.sh
+
+# Run HTTPS server on all interfaces
+python main.py -h 0.0.0.0 -p 8000
+```
+
+Then open `https://<your-lan-ip>:8000` on mobile and trust the certificate for that IP.
+If your IP changes, run `./scripts/generate_dev_cert.sh` again.
+
+## Deploy To Google Cloud Run
+
+This project is deployable to Google Cloud Run (recommended for WebSocket support).
+
+### 1. Prerequisites
+
+- `gcloud` CLI installed and authenticated
+- Docker installed locally
+- Billing enabled on your Google Cloud project
+
+### 2. One-command deploy (from `server/`)
+
+```bash
+PROJECT_ID=<your-project-id> ./deploy_cloud_run.sh
+```
+
+Optional overrides:
+
+```bash
+PROJECT_ID=<your-project-id> REGION=us-central1 SERVICE_NAME=apronai-live LOCATION=us-central1 MODEL=gemini-live-2.5-flash-native-audio ./deploy_cloud_run.sh
+# Cloud Run timeout is set to 3600s in the script
+```
+
+Architecture note (Apple Silicon / ARM Macs):
+
+- The deploy script builds `linux/amd64` by default, which is required by Cloud Run.
+- You can override with `BUILD_PLATFORM=linux/amd64` explicitly if needed.
+
+Runtime service account (recommended):
+
+```bash
+PROJECT_ID=<your-project-id> SERVICE_ACCOUNT=<sa-email> ./deploy_cloud_run.sh
+```
+
+If logs show `Permission 'aiplatform.endpoints.predict' denied`, grant Vertex AI role to the Cloud Run runtime service account:
+
+```bash
+gcloud projects add-iam-policy-binding <your-project-id> \
+  --member="serviceAccount:<sa-email>" \
+  --role="roles/aiplatform.user"
+```
+
+### 3. Required runtime permissions
+
+The Cloud Run service account must be able to call Vertex AI Live API.
+
+- Grant `roles/aiplatform.user` to the Cloud Run runtime service account.
+- If using a custom service account, deploy with `--service-account=<email>`.
+
+### 4. Cloud Build alternative
+
+You can also deploy through Cloud Build:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --substitutions=_PROJECT_ID=<your-project-id> .
+```
+
+### Deployment files
+
+- `Dockerfile` - production container image for Cloud Run
+- `.dockerignore` - excludes local-only files (`.env`, certs, tests)
+- `deploy_cloud_run.sh` - direct deploy helper
+- `cloudbuild.yaml` - CI/CD pipeline deploy path
+
 ## Features
 
 - **Google Gen AI SDK**: Uses the official Python SDK (`google-genai`) for simplified API interaction.

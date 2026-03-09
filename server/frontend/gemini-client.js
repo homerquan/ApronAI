@@ -44,6 +44,14 @@ class GeminiClient {
     this.send(JSON.stringify({ text: text }));
   }
 
+  startSession() {
+    this.send(
+      JSON.stringify({
+        type: "start_session",
+      })
+    );
+  }
+
   sendImage(base64Data, mimeType = "image/jpeg") {
     this.send(
       JSON.stringify({

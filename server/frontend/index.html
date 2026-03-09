@@ -17,18 +17,12 @@
 
       <main>
         <div class="auth-section" id="auth-section">
-          <div
-            class="description-box"
-            style="
-              margin-bottom: 20px;
-              padding: 15px;
-              background: #f5f5f5;
-              border-radius: 8px;
-              text-align: left;
-            "
-          >
+          <button id="toggleFeaturesBtn" class="btn link-btn compact hidden">
+            Show Features
+          </button>
+          <div id="featureDetails" class="description-box">
             <h3>Features Enabled:</h3>
-            <ul style="margin: 10px 0 20px 20px">
+            <ul class="feature-list">
               <li>
                 <strong>Native Audio:</strong> Low latency voice interaction
               </li>
@@ -48,8 +42,8 @@
               >
             </p>
           </div>
-          <p>Click below to connect.</p>
-          <button id="connectBtn" class="btn">Connect</button>
+          <p>Click below to open the app controls.</p>
+          <button id="connectBtn" class="btn">Open App</button>
         </div>
 
         <div class="session-end-section hidden" id="session-end-section">
@@ -58,8 +52,25 @@
         </div>
 
         <div class="app-section hidden" id="app-section">
+          <div class="session-start-row">
+            <button id="startSessionBtn" class="btn">Start Session</button>
+            <span class="note"
+              >Starts the online AI model only when clicked.</span
+            >
+          </div>
+
+          <div class="mobile-nav" id="mobileNav">
+            <button class="btn mobile-tab active" data-panel="camera">
+              Camera
+            </button>
+            <button class="btn mobile-tab" data-panel="chat">Chat</button>
+            <button class="btn mobile-tab" data-panel="progress">
+              Progress
+            </button>
+          </div>
+
           <div class="app-grid">
-            <div class="left-panel">
+            <div class="left-panel panel-camera" data-mobile-panel="camera">
               <div class="video-container">
                 <div id="video-placeholder">Start camera to send video</div>
                 <video id="video-preview" autoplay playsinline muted></video>
@@ -83,7 +94,7 @@
               </div>
             </div>
 
-            <div class="right-panel">
+            <div class="right-panel panel-chat" data-mobile-panel="chat">
               <div class="chat-log" id="chat-log"></div>
               <div class="input-area">
                 <input
@@ -96,15 +107,36 @@
             </div>
           </div>
 
-          <section class="progress-panel" id="progress-panel">
+          <section
+            class="progress-panel panel-progress"
+            id="progress-panel"
+            data-mobile-panel="progress"
+          >
             <div class="progress-panel-header">
               <h3>Cooking Progress</h3>
-              <span id="progress-updated" class="progress-updated">Waiting for progress...</span>
+              <span id="progress-updated" class="progress-updated"
+                >Waiting for progress...</span
+              >
             </div>
             <div id="progress-list" class="progress-list"></div>
           </section>
         </div>
       </main>
+    </div>
+
+    <div id="permissionModal" class="permission-modal hidden">
+      <div class="permission-dialog">
+        <h3>Enable Audio Access</h3>
+        <p class="note">
+          iOS often needs a direct user action to unlock audio playback and
+          microphone capture.
+        </p>
+        <div class="permission-actions">
+          <button id="permissionAllowBtn" class="btn">Enable Mic + Audio</button>
+          <button id="permissionSkipBtn" class="btn link-btn">Continue Without Mic</button>
+        </div>
+        <div id="permissionStatus" class="note"></div>
+      </div>
     </div>
     <script src="/static/media-handler.js"></script>
     <script src="/static/gemini-client.js"></script>
