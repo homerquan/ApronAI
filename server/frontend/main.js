@@ -66,10 +66,19 @@ function handleJsonMessage(msg) {
     mediaHandler.stopAudioPlayback();
     currentGeminiMessageDiv = null;
     currentUserMessageDiv = null;
+  } else if (msg.type === "session_restarting") {
+    const mode = msg.resuming ? "resuming context" : "starting fresh context";
+    statusDiv.textContent = `Connected (restarting model session, ${mode})`;
+    statusDiv.className = "status connected";
+  } else if (msg.type === "error") {
+    statusDiv.textContent = "Connected (recovering from model session error...)";
+    statusDiv.className = "status connected";
   } else if (msg.type === "turn_complete") {
     currentGeminiMessageDiv = null;
     currentUserMessageDiv = null;
   } else if (msg.type === "user") {
+    statusDiv.textContent = "Connected";
+    statusDiv.className = "status connected";
     if (currentUserMessageDiv) {
       currentUserMessageDiv.textContent += msg.text;
       chatLog.scrollTop = chatLog.scrollHeight;
@@ -77,6 +86,8 @@ function handleJsonMessage(msg) {
       currentUserMessageDiv = appendMessage("user", msg.text);
     }
   } else if (msg.type === "gemini") {
+    statusDiv.textContent = "Connected";
+    statusDiv.className = "status connected";
     if (currentGeminiMessageDiv) {
       currentGeminiMessageDiv.textContent += msg.text;
       chatLog.scrollTop = chatLog.scrollHeight;
