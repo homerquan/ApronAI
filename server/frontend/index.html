@@ -12,8 +12,7 @@
         <div>
           <h1>ApronAI AR Coach</h1>
           <p class="subhead">
-            WebXR HUD + Gemini Live. Use <a href="/eval">/eval</a> for the
-            existing evaluation frontend.
+            Our Physical AI agent will listen and see while you're cooking to guide you through recipes. <br/> No AR device? Test it on your smartphone at <a href="/eval">/eval</a>.
           </p>
         </div>
         <div id="status" class="status disconnected">Disconnected</div>
@@ -21,8 +20,13 @@
 
       <section class="control-row">
         <div class="recipe-picker">
-          <label for="recipeSelect">Recipe</label>
-          <select id="recipeSelect" class="recipe-select"></select>
+          <span class="recipe-label">Select a recipe</span>
+          <div
+            id="recipeOptions"
+            class="recipe-options"
+            role="radiogroup"
+            aria-label="Select a recipe"
+          ></div>
         </div>
         <button id="startSessionBtn" class="btn primary">Start Session</button>
         <div id="arButtonSlot" class="ar-button-slot"></div>

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ARButton } from "three/addons/webxr/ARButton.js";
 
 const statusEl = document.getElementById("status");
-const recipeSelectEl = document.getElementById("recipeSelect");
+const recipeOptionsEl = document.getElementById("recipeOptions");
 const startSessionBtn = document.getElementById("startSessionBtn");
 const arButtonSlot = document.getElementById("arButtonSlot");
 const micFeedStatusEl = document.getElementById("micFeedStatus");
@@ -91,6 +91,7 @@ function armStartupTimeout() {
     clearStartSessionRetry();
     startSessionBtn.disabled = false;
     startSessionBtn.textContent = "Start Session";
+    setRecipeControlsEnabled(true);
     setStatus("Start timed out. Retry session startup.", "error");
     if (geminiClient.isConnected()) geminiClient.disconnect();
   }, 12000);
@@ -138,6 +139,26 @@ function buildWaitingProgress(steps, recipeId = selectedRecipeId) {
       status: "wait",
     })),
   };
+}
+
+function setRecipeControlsEnabled(enabled) {
+  const inputs = recipeOptionsEl.querySelectorAll('input[name="recipeChoice"]');
+  for (const input of inputs) {
+    input.disabled = !enabled;
+  }
+}
+
+function applySelectedRecipe(recipeId) {
+  if (!recipeCatalog.has(recipeId)) return;
+  selectedRecipeId = recipeId;
+  const inputs = recipeOptionsEl.querySelectorAll('input[name="recipeChoice"]');
+  for (const input of inputs) {
+    input.checked = input.value === recipeId;
+  }
+  const entry = recipeCatalog.get(recipeId);
+  if (entry && Array.isArray(entry.steps)) {
+    renderProgress(buildWaitingProgress(entry.steps, recipeId));
+  }
 }
 
 function createArTextPanel({
@@ -341,7 +362,7 @@ async function loadRecipeCatalog() {
     }
     const listPayload = await listRes.json();
     const recipes = Array.isArray(listPayload.recipes) ? listPayload.recipes : [];
-    recipeSelectEl.innerHTML = "";
+    recipeOptionsEl.innerHTML = "";
 
     for (const recipe of recipes) {
       if (!recipe || typeof recipe.id !== "string") continue;
@@ -352,32 +373,61 @@ async function loadRecipeCatalog() {
       const detail = await detailRes.json();
       recipeCatalog.set(recipe.id, detail);
 
-      const option = document.createElement("option");
-      option.value = recipe.id;
-      option.textContent = detail.title || recipe.title || recipe.id;
-      recipeSelectEl.appendChild(option);
+      const optionWrap = document.createElement("label");
+      optionWrap.className = "recipe-option";
+
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "recipeChoice";
+      input.value = recipe.id;
+      input.addEventListener("change", () => {
+        if (sessionConnectRequested || modelSessionActive) return;
+        if (!input.checked) return;
+        applySelectedRecipe(input.value);
+      });
+
+      const text = document.createElement("span");
+      text.className = "recipe-option-text";
+      text.textContent = detail.title || recipe.title || recipe.id;
+
+      optionWrap.appendChild(input);
+      optionWrap.appendChild(text);
+      recipeOptionsEl.appendChild(optionWrap);
     }
 
     const initialRecipeId = recipeCatalog.has("pasta")
       ? "pasta"
       : recipeCatalog.keys().next().value || "pasta";
-    selectedRecipeId = initialRecipeId;
-    recipeSelectEl.value = initialRecipeId;
-    const selected = recipeCatalog.get(initialRecipeId);
-    if (selected && Array.isArray(selected.steps)) {
-      renderProgress(buildWaitingProgress(selected.steps, initialRecipeId));
-    } else {
-      renderProgress(defaultProgress);
-    }
+    applySelectedRecipe(initialRecipeId);
   } catch (error) {
     console.error("Failed to load recipe catalog:", error);
-    recipeSelectEl.innerHTML = "";
-    const fallback = document.createElement("option");
-    fallback.value = "pasta";
-    fallback.textContent = "Pasta";
-    recipeSelectEl.appendChild(fallback);
+    recipeCatalog.clear();
+    recipeOptionsEl.innerHTML = "";
+    recipeCatalog.set("pasta", {
+      id: "pasta",
+      title: "Pasta",
+      steps: defaultProgress.steps.map((step) => step.text),
+    });
+    const fallbackWrap = document.createElement("label");
+    fallbackWrap.className = "recipe-option";
+    const fallbackInput = document.createElement("input");
+    fallbackInput.type = "radio";
+    fallbackInput.name = "recipeChoice";
+    fallbackInput.value = "pasta";
+    fallbackInput.checked = true;
+    fallbackInput.addEventListener("change", () => {
+      if (sessionConnectRequested || modelSessionActive) return;
+      if (!fallbackInput.checked) return;
+      applySelectedRecipe("pasta");
+    });
+    const fallbackText = document.createElement("span");
+    fallbackText.className = "recipe-option-text";
+    fallbackText.textContent = "Pasta";
+    fallbackWrap.appendChild(fallbackInput);
+    fallbackWrap.appendChild(fallbackText);
+    recipeOptionsEl.appendChild(fallbackWrap);
     selectedRecipeId = "pasta";
-    renderProgress(defaultProgress);
+    applySelectedRecipe("pasta");
   }
 }
 
@@ -399,7 +449,7 @@ function handleJsonMessage(msg) {
     sessionConnectRequested = false;
     startSessionBtn.textContent = "Session Running";
     startSessionBtn.disabled = true;
-    recipeSelectEl.disabled = true;
+    setRecipeControlsEnabled(false);
     setStatus("Connected", "connected");
     loadProgress();
     return;
@@ -460,7 +510,7 @@ const geminiClient = new GeminiClient({
     sessionConnectRequested = false;
     stopMicCapture();
     stopCameraFeed();
-    recipeSelectEl.disabled = false;
+    setRecipeControlsEnabled(true);
     startSessionBtn.disabled = false;
     startSessionBtn.textContent = "Start Session";
     setStatus("Disconnected", "disconnected");
@@ -470,7 +520,7 @@ const geminiClient = new GeminiClient({
     clearStartSessionRetry();
     stopMicCapture();
     stopCameraFeed();
-    recipeSelectEl.disabled = false;
+    setRecipeControlsEnabled(true);
     setStatus("Connection Error", "error");
     startSessionBtn.disabled = false;
     startSessionBtn.textContent = "Start Session";
@@ -638,7 +688,7 @@ startSessionBtn.onclick = async () => {
   if (sessionConnectRequested || modelSessionActive) return;
 
   startSessionBtn.disabled = true;
-  recipeSelectEl.disabled = true;
+  setRecipeControlsEnabled(false);
   startSessionBtn.textContent = "Starting...";
   setStatus("Preparing mic and camera...", "disconnected");
   await Promise.allSettled([startMicCapture(), startCameraFeed()]);
@@ -651,15 +701,6 @@ startSessionBtn.onclick = async () => {
     geminiClient.connect();
   } else {
     beginStartSessionHandshake();
-  }
-};
-
-recipeSelectEl.onchange = () => {
-  if (sessionConnectRequested || modelSessionActive) return;
-  selectedRecipeId = recipeSelectEl.value || "pasta";
-  const entry = recipeCatalog.get(selectedRecipeId);
-  if (entry && Array.isArray(entry.steps)) {
-    renderProgress(buildWaitingProgress(entry.steps, selectedRecipeId));
   }
 };
 

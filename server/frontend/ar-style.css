@@ -101,7 +101,7 @@ h1 {
   gap: 6px;
 }
 
-.recipe-picker label {
+.recipe-label {
   font-size: 0.74rem;
   color: var(--muted);
   text-transform: uppercase;
@@ -109,20 +109,61 @@ h1 {
   font-weight: 700;
 }
 
-.recipe-select {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  min-height: 52px;
-  padding: 0 14px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 0.98rem;
-  font-weight: 600;
-  outline: none;
+.recipe-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.recipe-select:focus-visible {
+.recipe-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+
+.recipe-option input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.recipe-option-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel-elev), var(--panel));
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+  transition: border-color 120ms ease, filter 120ms ease, transform 120ms ease;
+}
+
+.recipe-option:hover .recipe-option-text {
+  border-color: #4a5b86;
+  filter: brightness(1.06);
+}
+
+.recipe-option input:checked + .recipe-option-text {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  color: #062922;
+}
+
+.recipe-option input:focus-visible + .recipe-option-text {
   box-shadow: 0 0 0 3px var(--focus);
+}
+
+.recipe-option input:disabled + .recipe-option-text {
+  opacity: 0.58;
+  cursor: not-allowed;
 }
 
 .ar-button-slot {
@@ -337,6 +378,10 @@ h1 {
   .control-row {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .recipe-options {
+    grid-template-columns: 1fr;
   }
 
   h1 {
