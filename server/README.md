@@ -2,6 +2,70 @@
 
 A demonstration of the Gemini Live API using the [Google Gen AI Python SDK](https://github.com/googleapis/python-genai) for the backend and vanilla JavaScript for the frontend. This example shows how to build a real-time multimodal application with a robust Python backend handling the API connection.
 
+## Inspiration
+
+Cooking is physical and time-sensitive, but most AI assistants are still text-first and screen-heavy.  
+ApronAI was inspired by the idea of a real-time kitchen copilot that can watch what you are doing, listen to you, and guide you step by step without forcing you to constantly type.
+
+## What it does
+
+ApronAI provides a multimodal cooking assistant powered by Gemini Live:
+
+- Streams microphone audio and camera frames to Gemini in real time.
+- Responds with low-latency native audio.
+- Tracks recipe progress step-by-step with explicit memory.
+- Exposes progress via API and renders it live in UI (web + AR HUD).
+- Supports multiple recipe prompts loaded dynamically from `/knolwedge`.
+- Offers two frontends:
+  - `/` for AR/WebXR mode
+  - `/eval` for standard camera/chat evaluation mode
+
+## How we built it
+
+- Backend: FastAPI + WebSocket session bridge in `main.py`.
+- Model integration: `gemini_live.py` wrapper around `google-genai` Live API.
+- Frontend:
+  - Vanilla JS media pipeline (`gemini-client.js`, `media-handler.js`).
+  - AR interface built with Three.js + `ARButton`.
+- Continuity layer:
+  - `progress_tracker.py` maintains explicit, text-based task memory checkpoints.
+  - Knowledge-driven recipes are loaded from JSON files in `/knolwedge`.
+- Reliability:
+  - Session restarts, resumable handles, queue backpressure control, and HTTPS/WSS support for mobile devices.
+
+## Challenges we ran into
+
+- Long-running multimodal sessions were timing out or degrading around short windows when audio + video were both active.
+- Conversation continuity could degrade when context was compressed, causing repeated questions.
+- Mobile browsers introduced extra constraints around HTTPS cert trust, media permissions, and AR behavior.
+
+To address this, we combined:
+
+- Context window compression (sliding/context shifting window) for longer sessions.
+- Explicit memory management to preserve stable step progress across compression and session restarts.
+
+## Accomplishments that we're proud of
+
+- Built a stable real-time multimodal loop with audio + video + voice responses.
+- Achieved significantly longer practical session duration through compression + session recovery.
+- Added explicit progress memory that survives long conversations and keeps the assistant on-step.
+- Delivered AR mode with in-scene HUD/transcript plus a fallback eval UI that works on phones and desktop.
+- Added dynamic recipe selection and knowledge loading without hardcoding prompts in frontend logic.
+
+## What we learned
+
+- Compression alone extends session length, but explicit memory is essential for continuity quality.
+- Real-time apps need careful queueing and restart strategy, not just model calls.
+- Mobile and AR UX are heavily shaped by browser security and permission models.
+- Designing for observability (verbose logs, tests, progress APIs) speeds up iteration and debugging.
+
+## What's next for ApronAI
+
+- Richer task memory with structured state per recipe (timers, ingredient status, parallel steps).
+- More recipe packs and tool integrations (timers, substitutions, pantry-aware guidance).
+- Better AR interaction patterns for hands-busy scenarios (voice-only mode, larger gaze-friendly controls).
+- Stronger production hardening: analytics, auth, and deployment profiles for multi-user usage.
+
 ## Quick Start
 
 ### 1. Backend Setup
