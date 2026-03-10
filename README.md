@@ -1,11 +1,18 @@
 # ApronAI
 
-ApronAI is a real-time multimodal cooking assistant built on the Gemini Live API.
-It listens to voice, receives camera frames, responds with native audio, and tracks recipe progress with explicit memory for long-running sessions.
+ApronAI is a real-time multimodal assistant for physical tasks, demonstrated through cooking.
+
+Built on the Gemini Live API, it listens to speech, watches the scene through the camera, responds with native audio, and keeps track of progress through explicit memory over long-running sessions. Rather than acting like a chatbot with a recipe attached, ApronAI is designed more like an embodied copilot: an AI system that can support people while they are doing hands-busy, time-sensitive work in the real world.
+
+Cooking is the first environment, but the broader idea is larger: bringing multimodal AI into physical workflows where seeing, listening, remembering state, and responding in real time matters.
 
 ## Inspiration
 
-Cooking is physical, time-sensitive, and often messy. Most assistants are still text-first and not designed for hands-busy workflows. ApronAI was inspired by the idea of a practical kitchen copilot that can see, hear, and guide users step-by-step in real time.
+Most AI assistants still live in a text box. That works well for writing and search, but it breaks down in physical environments where people are moving, using tools, switching attention, and making decisions under time pressure.
+
+Cooking is a simple but powerful example of this challenge. Your hands are busy, your timing matters, and the state of the task is constantly changing. A useful assistant in that setting should not just answer questions. It should perceive what is happening, remember where you are in the process, and guide you in a way that feels natural in the flow of work.
+
+ApronAI was inspired by that vision: AI that can operate alongside people during real physical tasks, not only after the fact or through static instructions. The kitchen became a practical testbed for this idea, combining multimodal perception, explicit memory, and real-time voice interaction into a system that feels closer to a true physical-world copilot.
 
 ## What it does
 
