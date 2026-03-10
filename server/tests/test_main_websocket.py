@@ -72,3 +72,19 @@ def test_ws_disconnect_does_not_log_receive_after_disconnect_error(monkeypatch, 
         in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_ws_start_session_uses_selected_recipe(monkeypatch):
+    main = _load_main(monkeypatch)
+    monkeypatch.setattr(main, "GeminiLive", _FakeGeminiLive)
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ready = ws.receive_json()
+            assert ready["type"] == "ready"
+            ws.send_text(json.dumps({"type": "start_session", "recipe": "taco"}))
+
+            messages = [ws.receive_json(), ws.receive_json()]
+            assert any(msg.get("type") == "session_started" for msg in messages)
+            progress_msg = next(msg for msg in messages if msg.get("type") == "progress")
+            assert progress_msg["progress"]["task"] == "Cook tacos"

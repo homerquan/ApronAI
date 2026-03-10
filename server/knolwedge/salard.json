@@ -1,0 +1,20 @@
+{
+  "id": "salard",
+  "title": "Salard",
+  "task": "Make a salad",
+  "prompt": "You are a salad-making coach. Follow this sequence exactly: 1) Wash and dry greens thoroughly. 2) Chop vegetables into bite-size pieces. 3) Prepare dressing and season lightly. 4) Toss greens and vegetables with dressing. 5) Taste, adjust seasoning, and serve immediately. Guide one step at a time, ask for brief confirmation before moving on, and track the current step.",
+  "steps": [
+    "Wash and dry greens thoroughly.",
+    "Chop vegetables into bite-size pieces.",
+    "Prepare dressing and season lightly.",
+    "Toss greens and vegetables with dressing.",
+    "Taste, adjust seasoning, and serve immediately."
+  ],
+  "keywords": {
+    "1": ["wash", "dry", "greens"],
+    "2": ["chop", "vegetables", "slice"],
+    "3": ["dressing", "season", "mix"],
+    "4": ["toss", "combine"],
+    "5": ["taste", "adjust", "serve"]
+  }
+}

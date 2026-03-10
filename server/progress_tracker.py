@@ -13,7 +13,7 @@ PASTA_STEPS = [
     "Combine with sauce and finish for 1-2 minutes.",
 ]
 
-STEP_KEYWORDS = {
+PASTA_STEP_KEYWORDS = {
     1: ("boil", "boiling", "water"),
     2: ("salt", "pasta", "add pasta"),
     3: ("stir", "al dente", "cook"),
@@ -28,11 +28,23 @@ DONE_PATTERN = re.compile(
 START_PATTERN = re.compile(r"\b(start|begin|go ahead|let's cook|lets cook)\b")
 
 
-class PastaProgressMemory:
-    """Tracks pasta progress in explicit text memory checkpoints."""
+class RecipeProgressMemory:
+    """Tracks progress in explicit text memory checkpoints for a recipe."""
 
-    def __init__(self, steps=None):
+    def __init__(self, task_name="Cook pasta", steps=None, step_keywords=None):
+        self.task_name = task_name
         self.steps = list(steps or PASTA_STEPS)
+        if step_keywords is None:
+            self.step_keywords = {k: tuple(v) for k, v in PASTA_STEP_KEYWORDS.items()}
+        else:
+            normalized = {}
+            for step, words in step_keywords.items():
+                try:
+                    step_num = int(step)
+                except (TypeError, ValueError):
+                    continue
+                normalized[step_num] = tuple(words or ())
+            self.step_keywords = normalized
         self.current_step = 1
         self.completed_steps = set()
         self.recent_user_turns = deque(maxlen=3)
@@ -53,7 +65,7 @@ class PastaProgressMemory:
         return None
 
     def _infer_step_from_keywords(self, text: str):
-        for step, words in STEP_KEYWORDS.items():
+        for step, words in self.step_keywords.items():
             if any(word in text for word in words):
                 return step
         return None
@@ -119,7 +131,7 @@ class PastaProgressMemory:
 
         return (
             "MEMORY CHECKPOINT (internal, do not acknowledge):\n"
-            "Task: Cook pasta.\n"
+            f"Task: {self.task_name}.\n"
             f"{step_line}\n"
             f"Completed steps: {completed_text}\n"
             f"Latest user turn: {recent_user}\n"
@@ -154,7 +166,19 @@ class PastaProgressMemory:
             "completed_steps": sorted(self.completed_steps),
             "steps": steps,
             "latest_user_turn": self.recent_user_turns[-1] if self.recent_user_turns else "",
+            "task": self.task_name,
         }
+
+
+class PastaProgressMemory(RecipeProgressMemory):
+    """Backwards-compatible pasta-specific progress memory."""
+
+    def __init__(self, steps=None):
+        super().__init__(
+            task_name="Cook pasta",
+            steps=steps or PASTA_STEPS,
+            step_keywords=PASTA_STEP_KEYWORDS,
+        )
 
 
 class ProgressStateStore:
@@ -177,7 +201,7 @@ class ProgressStateStore:
             self._state.update(state)
             return deepcopy(self._state)
 
-    def set_from_memory(self, memory: PastaProgressMemory):
+    def set_from_memory(self, memory: RecipeProgressMemory):
         return self.set(memory.to_progress_payload())
 
     def get(self):

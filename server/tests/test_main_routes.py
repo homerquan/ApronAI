@@ -32,3 +32,24 @@ def test_eval_serves_existing_frontend(monkeypatch):
         assert response.status_code == 200
         assert "Gemini Live API Demo" in response.text
         assert "/static/main.js" in response.text
+
+
+def test_knowledge_list_includes_expected_recipes(monkeypatch):
+    main = _load_main(monkeypatch)
+    with TestClient(main.app) as client:
+        response = client.get("/api/knowledge")
+        assert response.status_code == 200
+        payload = response.json()
+        ids = {item["id"] for item in payload["recipes"]}
+        assert {"pasta", "taco", "salard"}.issubset(ids)
+
+
+def test_knowledge_item_returns_prompt_and_steps(monkeypatch):
+    main = _load_main(monkeypatch)
+    with TestClient(main.app) as client:
+        response = client.get("/api/knowledge/taco")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["id"] == "taco"
+        assert isinstance(payload["prompt"], str) and payload["prompt"]
+        assert isinstance(payload["steps"], list) and len(payload["steps"]) >= 3

@@ -1,0 +1,20 @@
+{
+  "id": "pasta",
+  "title": "Pasta",
+  "task": "Cook pasta",
+  "prompt": "You are a pasta-cooking coach. Follow this sequence exactly: 1) Bring a pot of water to a rolling boil. 2) Add salt, then add pasta. 3) Stir and cook until al dente. 4) Reserve a little pasta water, then drain. 5) Combine with sauce and finish for 1-2 minutes. Guide one step at a time, ask for brief confirmation before moving on, and track the current step.",
+  "steps": [
+    "Bring a pot of water to a rolling boil.",
+    "Add salt, then add pasta.",
+    "Stir and cook until al dente.",
+    "Reserve a little pasta water, then drain.",
+    "Combine with sauce and finish for 1-2 minutes."
+  ],
+  "keywords": {
+    "1": ["boil", "boiling", "water"],
+    "2": ["salt", "pasta", "add pasta"],
+    "3": ["stir", "al dente", "cook"],
+    "4": ["reserve", "drain"],
+    "5": ["sauce", "combine", "finish"]
+  }
+}

@@ -1,7 +1,8 @@
-import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
-import { ARButton } from "https://unpkg.com/three@0.164.1/examples/jsm/webxr/ARButton.js";
+import * as THREE from "three";
+import { ARButton } from "three/addons/webxr/ARButton.js";
 
 const statusEl = document.getElementById("status");
+const recipeSelectEl = document.getElementById("recipeSelect");
 const startSessionBtn = document.getElementById("startSessionBtn");
 const arButtonSlot = document.getElementById("arButtonSlot");
 const micFeedStatusEl = document.getElementById("micFeedStatus");
@@ -16,6 +17,7 @@ const cameraCanvas = document.getElementById("camera-canvas");
 
 const defaultProgress = {
   updated_at: null,
+  recipe: "pasta",
   steps: [
     { step: 1, text: "Bring a pot of water to a rolling boil.", status: "wait" },
     { step: 2, text: "Add salt, then add pasta.", status: "wait" },
@@ -43,6 +45,12 @@ let arLaunchButton = null;
 let xrReady = false;
 let currentGeminiTranscript = "";
 const transcriptHistory = [];
+let hasReceivedGeminiTranscript = false;
+let selectedRecipeId = "pasta";
+const recipeCatalog = new Map();
+let latestProgressForAr = defaultProgress;
+let arHudPanel = null;
+let arTranscriptPanel = null;
 
 function setStatus(text, kind = "disconnected") {
   statusEl.textContent = text;
@@ -66,7 +74,7 @@ function clearStartSessionRetry() {
 function sendStartSessionSignal() {
   if (!sessionConnectRequested || modelSessionActive) return;
   if (!geminiClient.isConnected()) return;
-  geminiClient.startSession();
+  geminiClient.startSession({ recipe: selectedRecipeId });
 }
 
 function beginStartSessionHandshake() {
@@ -90,11 +98,16 @@ function armStartupTimeout() {
 
 function updateTranscriptView() {
   transcriptCurrentEl.textContent =
-    currentGeminiTranscript || "Waiting for AI transcript...";
+    currentGeminiTranscript ||
+    (hasReceivedGeminiTranscript ? "" : "Waiting for AI transcript...");
   transcriptHistoryEl.textContent = transcriptHistory.join(" ");
+  drawArTranscriptPanel();
 }
 
 function appendGeminiTranscript(textChunk) {
+  if (textChunk && textChunk.trim()) {
+    hasReceivedGeminiTranscript = true;
+  }
   currentGeminiTranscript += textChunk;
   updateTranscriptView();
 }
@@ -115,8 +128,178 @@ function formatUpdatedTime(unixTs) {
   return `Updated ${new Date(unixTs * 1000).toLocaleTimeString()}`;
 }
 
+function buildWaitingProgress(steps, recipeId = selectedRecipeId) {
+  return {
+    updated_at: null,
+    recipe: recipeId,
+    steps: (steps || []).map((text, index) => ({
+      step: index + 1,
+      text,
+      status: "wait",
+    })),
+  };
+}
+
+function createArTextPanel({
+  width,
+  height,
+  scaleX,
+  scaleY,
+  background = "rgba(7, 12, 22, 0.82)",
+  border = "rgba(255, 255, 255, 0.3)",
+  textColor = "#f8fbff",
+}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(scaleX, scaleY, 1);
+  sprite.renderOrder = 999;
+
+  return { canvas, ctx, texture, sprite, background, border, textColor };
+}
+
+function drawPanelBackground(panel) {
+  const { ctx, canvas, background, border } = panel;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+}
+
+function wrapTextLines(ctx, text, maxWidth) {
+  if (!text) return [""];
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawArProgressPanel(progress) {
+  if (!arHudPanel) return;
+  const panel = arHudPanel;
+  drawPanelBackground(panel);
+  const { ctx, canvas, textColor, texture } = panel;
+  const padX = 18;
+  const maxWidth = canvas.width - padX * 2;
+  let y = 34;
+
+  ctx.fillStyle = textColor;
+  ctx.font = "bold 28px sans-serif";
+  const heading = progress && progress.recipe ? `HUD: ${String(progress.recipe).toUpperCase()}` : "HUD";
+  ctx.fillText(heading, padX, y);
+  y += 32;
+
+  ctx.font = "18px sans-serif";
+  ctx.fillStyle = "rgba(242, 245, 251, 0.78)";
+  ctx.fillText(formatUpdatedTime(progress && progress.updated_at), padX, y);
+  y += 28;
+
+  ctx.fillStyle = textColor;
+  ctx.font = "20px sans-serif";
+  const steps = progress && Array.isArray(progress.steps) ? progress.steps : [];
+  for (const step of steps.slice(0, 5)) {
+    const icon = step.status === "done" ? "[x]" : step.status === "in_progress" ? "[>]" : "[ ]";
+    const lineText = `${icon} ${step.step}. ${step.text}`;
+    const wrapped = wrapTextLines(ctx, lineText, maxWidth);
+    for (const line of wrapped.slice(0, 2)) {
+      ctx.fillText(line, padX, y);
+      y += 24;
+    }
+    y += 6;
+    if (y > canvas.height - 20) break;
+  }
+
+  texture.needsUpdate = true;
+}
+
+function drawArTranscriptPanel() {
+  if (!arTranscriptPanel) return;
+  const panel = arTranscriptPanel;
+  drawPanelBackground(panel);
+  const { ctx, canvas, textColor, texture } = panel;
+  const padX = 20;
+  const maxWidth = canvas.width - padX * 2;
+  let y = 36;
+
+  ctx.fillStyle = "rgba(242, 245, 251, 0.72)";
+  ctx.font = "18px sans-serif";
+  const historyText = transcriptHistory.join(" ");
+  const historyLines = wrapTextLines(ctx, historyText, maxWidth).slice(-2);
+  for (const line of historyLines) {
+    ctx.fillText(line, padX, y);
+    y += 22;
+  }
+
+  y += 6;
+  ctx.fillStyle = textColor;
+  ctx.font = "bold 26px sans-serif";
+  const currentText =
+    currentGeminiTranscript ||
+    (hasReceivedGeminiTranscript ? "" : "Waiting for AI transcript...");
+  const currentLines = currentText
+    ? wrapTextLines(ctx, currentText, maxWidth).slice(0, 2)
+    : [];
+  for (const line of currentLines) {
+    ctx.fillText(line, padX, y);
+    y += 30;
+  }
+
+  texture.needsUpdate = true;
+}
+
+function createArOverlayPanels() {
+  if (!camera || arHudPanel || arTranscriptPanel) return;
+
+  arHudPanel = createArTextPanel({
+    width: 900,
+    height: 620,
+    scaleX: 0.56,
+    scaleY: 0.38,
+    background: "rgba(10, 16, 28, 0.82)",
+  });
+  arHudPanel.sprite.position.set(-0.34, 0.22, -0.95);
+  camera.add(arHudPanel.sprite);
+
+  arTranscriptPanel = createArTextPanel({
+    width: 1280,
+    height: 260,
+    scaleX: 0.88,
+    scaleY: 0.18,
+    background: "rgba(8, 12, 20, 0.78)",
+  });
+  arTranscriptPanel.sprite.position.set(0, -0.34, -1.0);
+  camera.add(arTranscriptPanel.sprite);
+
+  drawArProgressPanel(latestProgressForAr);
+  drawArTranscriptPanel();
+}
+
 function renderProgress(progress) {
   if (!progress || !Array.isArray(progress.steps)) return;
+  latestProgressForAr = progress;
   progressListEl.innerHTML = "";
   for (const step of progress.steps) {
     const row = document.createElement("div");
@@ -136,6 +319,7 @@ function renderProgress(progress) {
   }
 
   progressUpdatedEl.textContent = formatUpdatedTime(progress.updated_at);
+  drawArProgressPanel(progress);
 }
 
 async function loadProgress() {
@@ -146,6 +330,54 @@ async function loadProgress() {
     renderProgress(payload);
   } catch (error) {
     console.error("Failed to load progress:", error);
+  }
+}
+
+async function loadRecipeCatalog() {
+  try {
+    const listRes = await fetch("/api/knowledge", { cache: "no-store" });
+    if (!listRes.ok) {
+      throw new Error(`Knowledge list request failed (${listRes.status})`);
+    }
+    const listPayload = await listRes.json();
+    const recipes = Array.isArray(listPayload.recipes) ? listPayload.recipes : [];
+    recipeSelectEl.innerHTML = "";
+
+    for (const recipe of recipes) {
+      if (!recipe || typeof recipe.id !== "string") continue;
+      const detailRes = await fetch(`/api/knowledge/${encodeURIComponent(recipe.id)}`, {
+        cache: "no-store",
+      });
+      if (!detailRes.ok) continue;
+      const detail = await detailRes.json();
+      recipeCatalog.set(recipe.id, detail);
+
+      const option = document.createElement("option");
+      option.value = recipe.id;
+      option.textContent = detail.title || recipe.title || recipe.id;
+      recipeSelectEl.appendChild(option);
+    }
+
+    const initialRecipeId = recipeCatalog.has("pasta")
+      ? "pasta"
+      : recipeCatalog.keys().next().value || "pasta";
+    selectedRecipeId = initialRecipeId;
+    recipeSelectEl.value = initialRecipeId;
+    const selected = recipeCatalog.get(initialRecipeId);
+    if (selected && Array.isArray(selected.steps)) {
+      renderProgress(buildWaitingProgress(selected.steps, initialRecipeId));
+    } else {
+      renderProgress(defaultProgress);
+    }
+  } catch (error) {
+    console.error("Failed to load recipe catalog:", error);
+    recipeSelectEl.innerHTML = "";
+    const fallback = document.createElement("option");
+    fallback.value = "pasta";
+    fallback.textContent = "Pasta";
+    recipeSelectEl.appendChild(fallback);
+    selectedRecipeId = "pasta";
+    renderProgress(defaultProgress);
   }
 }
 
@@ -167,11 +399,9 @@ function handleJsonMessage(msg) {
     sessionConnectRequested = false;
     startSessionBtn.textContent = "Session Running";
     startSessionBtn.disabled = true;
+    recipeSelectEl.disabled = true;
     setStatus("Connected", "connected");
     loadProgress();
-    geminiClient.sendText(
-      "System: You are an AR pasta-cooking coach. Keep instructions concise and step-focused."
-    );
     return;
   }
 
@@ -230,6 +460,7 @@ const geminiClient = new GeminiClient({
     sessionConnectRequested = false;
     stopMicCapture();
     stopCameraFeed();
+    recipeSelectEl.disabled = false;
     startSessionBtn.disabled = false;
     startSessionBtn.textContent = "Start Session";
     setStatus("Disconnected", "disconnected");
@@ -239,6 +470,7 @@ const geminiClient = new GeminiClient({
     clearStartSessionRetry();
     stopMicCapture();
     stopCameraFeed();
+    recipeSelectEl.disabled = false;
     setStatus("Connection Error", "error");
     startSessionBtn.disabled = false;
     startSessionBtn.textContent = "Start Session";
@@ -260,6 +492,8 @@ function setupThreeScene() {
     0.01,
     20
   );
+  scene.add(camera);
+  createArOverlayPanels();
 
   const light = new THREE.HemisphereLight(0xffffff, 0x667788, 1.2);
   scene.add(light);
@@ -404,6 +638,7 @@ startSessionBtn.onclick = async () => {
   if (sessionConnectRequested || modelSessionActive) return;
 
   startSessionBtn.disabled = true;
+  recipeSelectEl.disabled = true;
   startSessionBtn.textContent = "Starting...";
   setStatus("Preparing mic and camera...", "disconnected");
   await Promise.allSettled([startMicCapture(), startCameraFeed()]);
@@ -419,10 +654,19 @@ startSessionBtn.onclick = async () => {
   }
 };
 
+recipeSelectEl.onchange = () => {
+  if (sessionConnectRequested || modelSessionActive) return;
+  selectedRecipeId = recipeSelectEl.value || "pasta";
+  const entry = recipeCatalog.get(selectedRecipeId);
+  if (entry && Array.isArray(entry.steps)) {
+    renderProgress(buildWaitingProgress(entry.steps, selectedRecipeId));
+  }
+};
+
 async function bootstrap() {
   renderProgress(defaultProgress);
   updateTranscriptView();
-  await loadProgress();
+  await loadRecipeCatalog();
   setupThreeScene();
   xrReady = await ensureArSupport();
   if (!xrReady) {

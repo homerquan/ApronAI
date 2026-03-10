@@ -1,14 +1,17 @@
 :root {
   --bg: #0f1320;
   --panel: #1a2031;
+  --panel-elev: #222b43;
   --panel-soft: #20283d;
   --text: #f2f5fb;
   --muted: #9aa6c0;
   --primary: #28c0a8;
+  --primary-strong: #1bc7aa;
   --danger: #d84444;
   --ok: #27a562;
   --warn: #d4a530;
   --border: #2e3852;
+  --focus: rgba(40, 192, 168, 0.28);
 }
 
 * {
@@ -18,7 +21,10 @@
 body {
   margin: 0;
   font-family: "Inter", "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top, #20253a, #0f1320 45%, #0b101b);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(43, 75, 160, 0.24), transparent 42%),
+    radial-gradient(circle at 85% 12%, rgba(13, 131, 120, 0.16), transparent 36%),
+    radial-gradient(circle at top, #20253a, #0f1320 45%, #0b101b);
   color: var(--text);
 }
 
@@ -29,36 +35,42 @@ a {
 .ar-shell {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 14px clamp(12px, 2vw, 20px);
 }
 
 .top-bar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: clamp(1.4rem, 2.8vw, 1.95rem);
+  letter-spacing: 0.01em;
 }
 
 .subhead {
-  margin: 6px 0 0 0;
+  margin: 4px 0 0 0;
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
 .status {
   display: inline-flex;
   align-items: center;
-  padding: 8px 10px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--panel);
-  font-size: 0.84rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -78,35 +90,88 @@ h1 {
 
 .control-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(230px, 1.15fr) minmax(210px, 1fr) minmax(180px, 0.75fr);
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.recipe-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.recipe-picker label {
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.recipe-select {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.recipe-select:focus-visible {
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
 .ar-button-slot {
-  min-height: 44px;
+  min-height: 52px;
+  display: flex;
+  align-items: flex-end;
 }
 
 .help-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 10px 0 14px;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(78, 93, 132, 0.48);
+  background: rgba(19, 26, 42, 0.72);
 }
 
 .help-text {
-  font-size: 0.83rem;
+  font-size: 0.82rem;
   color: var(--muted);
 }
 
 .btn {
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel-elev), var(--panel));
   color: var(--text);
-  border-radius: 10px;
-  min-height: 44px;
-  font-size: 0.92rem;
+  border-radius: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  font-size: 0.98rem;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease, filter 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: #4a5b86;
+  filter: brightness(1.06);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
 .btn:disabled {
@@ -115,9 +180,10 @@ h1 {
 }
 
 .btn.primary {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
   color: #062922;
   border-color: transparent;
+  font-weight: 700;
 }
 
 .btn.danger {
@@ -131,6 +197,12 @@ h1 {
   align-items: center;
   justify-content: center;
   text-decoration: none;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .hud-panel,
@@ -230,7 +302,7 @@ h1 {
 .transcript-strip {
   position: fixed;
   left: 50%;
-  top: 10px;
+  bottom: max(12px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   width: min(980px, calc(100% - 20px));
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -263,7 +335,8 @@ h1 {
 
 @media (max-width: 900px) {
   .control-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   h1 {
@@ -298,7 +371,7 @@ h1 {
   }
 
   .transcript-strip {
-    top: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
     padding: 8px 10px;
     border-radius: 10px;
   }

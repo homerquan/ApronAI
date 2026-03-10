@@ -20,6 +20,10 @@
       </header>
 
       <section class="control-row">
+        <div class="recipe-picker">
+          <label for="recipeSelect">Recipe</label>
+          <select id="recipeSelect" class="recipe-select"></select>
+        </div>
         <button id="startSessionBtn" class="btn primary">Start Session</button>
         <div id="arButtonSlot" class="ar-button-slot"></div>
       </section>
@@ -56,6 +60,14 @@
 
     <script src="/static/gemini-client.js"></script>
     <script src="/static/media-handler.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
     <script type="module" src="/static/ar-main.js"></script>
   </body>
 </html>

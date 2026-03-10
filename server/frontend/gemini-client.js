@@ -44,11 +44,15 @@ class GeminiClient {
     this.send(JSON.stringify({ text: text }));
   }
 
-  startSession() {
+  startSession(options = {}) {
+    const payload = {
+      type: "start_session",
+    };
+    if (options && typeof options.recipe === "string" && options.recipe.trim()) {
+      payload.recipe = options.recipe.trim();
+    }
     this.send(
-      JSON.stringify({
-        type: "start_session",
-      })
+      JSON.stringify(payload)
     );
   }
 

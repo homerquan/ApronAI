@@ -1,0 +1,20 @@
+{
+  "id": "taco",
+  "title": "Taco",
+  "task": "Cook tacos",
+  "prompt": "You are a taco-cooking coach. Follow this sequence exactly: 1) Prep taco fillings (protein, onion, cilantro, lime). 2) Cook and season the protein fully. 3) Warm tortillas until soft and lightly charred. 4) Assemble tacos with protein and toppings. 5) Taste and adjust with lime, salt, and salsa. Guide one step at a time, ask for brief confirmation before moving on, and track the current step.",
+  "steps": [
+    "Prep taco fillings (protein, onion, cilantro, lime).",
+    "Cook and season the protein fully.",
+    "Warm tortillas until soft and lightly charred.",
+    "Assemble tacos with protein and toppings.",
+    "Taste and adjust with lime, salt, and salsa."
+  ],
+  "keywords": {
+    "1": ["prep", "onion", "cilantro", "lime"],
+    "2": ["cook", "season", "protein", "meat"],
+    "3": ["warm", "tortilla", "char"],
+    "4": ["assemble", "taco", "toppings"],
+    "5": ["taste", "adjust", "salsa", "salt"]
+  }
+}

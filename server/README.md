@@ -118,8 +118,9 @@ gcloud builds submit --config cloudbuild.yaml --substitutions=_PROJECT_ID=<your-
 - **FastAPI Backend**: Robust, async-ready web server handling WebSocket connections.
 - **Real-time Streaming**: Bi-directional audio and video streaming.
 - **Continuous Session Recovery**: Automatically restarts Live sessions when they time out, with resumption handles when available.
-- **Explicit Text Memory**: Persists pasta step progress via internal text checkpoints so compression is less likely to lose current step.
+- **Explicit Text Memory**: Persists selected recipe step progress via internal text checkpoints so compression is less likely to lose current step.
 - **Progress API + UI**: `GET /api/progress` exposes step statuses (`done`, `in_progress`, `wait`) and the main UI shows them live.
+- **Knowledge API**: `GET /api/knowledge` and `GET /api/knowledge/{id}` load recipe prompts/steps from `knolwedge/*.json`.
 - **Dedicated Progress Module**: `progress_tracker.py` contains memory logic and shared progress state store.
 - **Tool Use**: Demonstrates how to register and handle server-side tools.
 - **Vanilla JS Frontend**: Lightweight frontend with no build steps or framework dependencies.
@@ -130,6 +131,7 @@ gcloud builds submit --config cloudbuild.yaml --substitutions=_PROJECT_ID=<your-
 /
 ├── main.py             # FastAPI server & WebSocket endpoint
 ├── gemini_live.py      # Gemini Live API wrapper using Gen AI SDK
+├── knolwedge/          # Recipe knowledge files (one JSON per recipe)
 ├── requirements.txt    # Python dependencies
 └── frontend/
     ├── index.html      # User Interface
@@ -172,7 +174,7 @@ The backend supports these optional environment variables:
 - `LIVE_ENABLE_PROACTIVE_AUDIO` (default: `0`) - enable/disable proactive audio mode
 - `LIVE_API_VERSION` (default: `v1`) - Live API version for Vertex (`v1` recommended)
 - `LIVE_VOICE_NAME` (default: `Zephyr`) - prebuilt voice name (female voice)
-- `LIVE_SYSTEM_PROMPT` (default: pasta-cooking assistant prompt) - system instruction text
+- `LIVE_SYSTEM_PROMPT` (default: unset) - optional global override for recipe system prompt
 - `LIVE_ENGLISH_ONLY` (default: `1`) - force the assistant to respond in English only
 
 ## Core Components

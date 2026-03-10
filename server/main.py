@@ -5,18 +5,24 @@ import contextlib
 import json
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from gemini_live import GeminiLive
-from progress_tracker import PASTA_STEPS, PastaProgressMemory, ProgressStateStore
+from progress_tracker import (
+    PASTA_STEPS,
+    ProgressStateStore,
+    RecipeProgressMemory,
+)
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SSL_CERTFILE = os.path.join(SERVER_DIR, "ssl", "cert.pem")
 DEFAULT_SSL_KEYFILE = os.path.join(SERVER_DIR, "ssl", "key.pem")
+KNOLWEDGE_DIR = Path(SERVER_DIR) / "knolwedge"
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +38,71 @@ def parse_optional_int_env(name: str):
     if raw == "":
         return None
     return int(raw)
+
+
+def load_knowledge_entries():
+    entries = {}
+    if not KNOLWEDGE_DIR.exists():
+        return entries
+
+    for path in sorted(KNOLWEDGE_DIR.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Skipping invalid knowledge file %s: %s", path.name, exc)
+            continue
+
+        recipe_id = str(payload.get("id") or path.stem).strip().lower()
+        prompt = str(payload.get("prompt") or "").strip()
+        steps = [str(step).strip() for step in payload.get("steps") or [] if str(step).strip()]
+        if not recipe_id or not prompt or not steps:
+            logger.warning(
+                "Skipping knowledge file %s (missing id/prompt/steps)", path.name
+            )
+            continue
+
+        keywords = payload.get("keywords") or {}
+        if not isinstance(keywords, dict):
+            keywords = {}
+
+        entries[recipe_id] = {
+            "id": recipe_id,
+            "title": str(payload.get("title") or recipe_id.title()),
+            "task": str(payload.get("task") or f"Cook {recipe_id}"),
+            "prompt": prompt,
+            "steps": steps,
+            "keywords": keywords,
+        }
+    return entries
+
+
+KNOWLEDGE_RECIPES = load_knowledge_entries()
+DEFAULT_RECIPE_ID = os.getenv("DEFAULT_RECIPE_ID", "pasta").strip().lower()
+if DEFAULT_RECIPE_ID not in KNOWLEDGE_RECIPES and KNOWLEDGE_RECIPES:
+    DEFAULT_RECIPE_ID = next(iter(KNOWLEDGE_RECIPES))
+if not KNOWLEDGE_RECIPES:
+    KNOWLEDGE_RECIPES["pasta"] = {
+        "id": "pasta",
+        "title": "Pasta",
+        "task": "Cook pasta",
+        "prompt": (
+            "You are a pasta-cooking coach. Follow this sequence exactly: "
+            + " ".join(f"{idx}) {text}" for idx, text in enumerate(PASTA_STEPS, start=1))
+            + " Guide one step at a time, ask for brief confirmation before moving on, "
+            "and keep track of the current step."
+        ),
+        "steps": list(PASTA_STEPS),
+        "keywords": {},
+    }
+    DEFAULT_RECIPE_ID = "pasta"
+
+
+def get_recipe_config(recipe_id: str | None):
+    if recipe_id:
+        key = recipe_id.strip().lower()
+        if key in KNOWLEDGE_RECIPES:
+            return KNOWLEDGE_RECIPES[key]
+    return KNOWLEDGE_RECIPES[DEFAULT_RECIPE_ID]
 
 
 # Configuration
@@ -52,15 +123,7 @@ LIVE_ENABLE_TRANSCRIPTIONS = os.getenv("LIVE_ENABLE_TRANSCRIPTIONS", "1").lower(
 LIVE_ENABLE_PROACTIVE_AUDIO = os.getenv("LIVE_ENABLE_PROACTIVE_AUDIO", "0").lower() in {"1", "true", "yes"}
 LIVE_API_VERSION = os.getenv("LIVE_API_VERSION", "v1").strip() or None
 LIVE_VOICE_NAME = os.getenv("LIVE_VOICE_NAME", "Zephyr")
-LIVE_SYSTEM_PROMPT = os.getenv(
-    "LIVE_SYSTEM_PROMPT",
-    (
-        "You are a pasta-cooking coach. Follow this sequence exactly: "
-        + " ".join(f"{idx}) {text}" for idx, text in enumerate(PASTA_STEPS, start=1))
-        + " Guide one step at a time, ask for brief confirmation before moving on, "
-        "and keep track of the current step."
-    ),
-)
+LIVE_SYSTEM_PROMPT_OVERRIDE = os.getenv("LIVE_SYSTEM_PROMPT")
 LIVE_ENGLISH_ONLY = os.getenv("LIVE_ENGLISH_ONLY", "1").lower() not in {
     "0",
     "false",
@@ -109,6 +172,24 @@ async def progress():
     return progress_store.get()
 
 
+@app.get("/api/knowledge")
+async def knowledge_list():
+    recipes = [
+        {"id": item["id"], "title": item["title"]}
+        for item in KNOWLEDGE_RECIPES.values()
+    ]
+    return {"default": DEFAULT_RECIPE_ID, "recipes": recipes}
+
+
+@app.get("/api/knowledge/{recipe_id}")
+async def knowledge_item(recipe_id: str):
+    key = recipe_id.strip().lower()
+    recipe = KNOWLEDGE_RECIPES.get(key)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Unknown recipe")
+    return recipe
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for Gemini Live."""
@@ -121,6 +202,7 @@ async def websocket_endpoint(websocket: WebSocket):
     text_input_queue = asyncio.Queue(maxsize=MAX_TEXT_QUEUE_SIZE)
     stop_event = asyncio.Event()
     session_started = False
+    active_recipe_id = DEFAULT_RECIPE_ID
     run_session_task = None
     receive_task = None
 
@@ -147,41 +229,47 @@ async def websocket_endpoint(websocket: WebSocket):
         # The event queue handles the JSON message, but we might want to do something else here
         pass
 
-    gemini_client = GeminiLive(
-        project_id=PROJECT_ID,
-        location=LOCATION,
-        model=MODEL,
-        input_sample_rate=16000,
-        media_resolution=LIVE_MEDIA_RESOLUTION,
-        enable_context_window_compression=LIVE_ENABLE_CONTEXT_WINDOW_COMPRESSION,
-        compression_trigger_tokens=LIVE_COMPRESSION_TRIGGER_TOKENS,
-        compression_target_tokens=LIVE_COMPRESSION_TARGET_TOKENS,
-        enable_transcriptions=LIVE_ENABLE_TRANSCRIPTIONS,
-        enable_proactive_audio=LIVE_ENABLE_PROACTIVE_AUDIO,
-        api_version=LIVE_API_VERSION,
-        voice_name=LIVE_VOICE_NAME,
-        system_instruction_text=LIVE_SYSTEM_PROMPT,
-        english_only=LIVE_ENGLISH_ONLY,
-    )
-    logger.info(
-        "Gemini config model=%s location=%s api_version=%s media_resolution=%s compression_enabled=%s compression=(%s->%s) transcriptions=%s proactive_audio=%s voice=%s english_only=%s",
-        gemini_client.model,
-        LOCATION,
-        LIVE_API_VERSION,
-        LIVE_MEDIA_RESOLUTION,
-        LIVE_ENABLE_CONTEXT_WINDOW_COMPRESSION,
-        LIVE_COMPRESSION_TRIGGER_TOKENS,
-        LIVE_COMPRESSION_TARGET_TOKENS,
-        LIVE_ENABLE_TRANSCRIPTIONS,
-        LIVE_ENABLE_PROACTIVE_AUDIO,
-        LIVE_VOICE_NAME,
-        LIVE_ENGLISH_ONLY,
-    )
-
-    async def run_session():
+    async def run_session(recipe_id: str):
         restart_count = 0
         resume_handle = None
-        memory_tracker = PastaProgressMemory()
+        recipe = get_recipe_config(recipe_id)
+        memory_tracker = RecipeProgressMemory(
+            task_name=recipe["task"],
+            steps=recipe["steps"],
+            step_keywords=recipe.get("keywords"),
+        )
+        system_prompt_text = LIVE_SYSTEM_PROMPT_OVERRIDE or recipe["prompt"]
+        gemini_client = GeminiLive(
+            project_id=PROJECT_ID,
+            location=LOCATION,
+            model=MODEL,
+            input_sample_rate=16000,
+            media_resolution=LIVE_MEDIA_RESOLUTION,
+            enable_context_window_compression=LIVE_ENABLE_CONTEXT_WINDOW_COMPRESSION,
+            compression_trigger_tokens=LIVE_COMPRESSION_TRIGGER_TOKENS,
+            compression_target_tokens=LIVE_COMPRESSION_TARGET_TOKENS,
+            enable_transcriptions=LIVE_ENABLE_TRANSCRIPTIONS,
+            enable_proactive_audio=LIVE_ENABLE_PROACTIVE_AUDIO,
+            api_version=LIVE_API_VERSION,
+            voice_name=LIVE_VOICE_NAME,
+            system_instruction_text=system_prompt_text,
+            english_only=LIVE_ENGLISH_ONLY,
+        )
+        logger.info(
+            "Gemini config model=%s location=%s api_version=%s media_resolution=%s compression_enabled=%s compression=(%s->%s) transcriptions=%s proactive_audio=%s voice=%s english_only=%s recipe=%s",
+            gemini_client.model,
+            LOCATION,
+            LIVE_API_VERSION,
+            LIVE_MEDIA_RESOLUTION,
+            LIVE_ENABLE_CONTEXT_WINDOW_COMPRESSION,
+            LIVE_COMPRESSION_TRIGGER_TOKENS,
+            LIVE_COMPRESSION_TARGET_TOKENS,
+            LIVE_ENABLE_TRANSCRIPTIONS,
+            LIVE_ENABLE_PROACTIVE_AUDIO,
+            LIVE_VOICE_NAME,
+            LIVE_ENGLISH_ONLY,
+            recipe["id"],
+        )
         initial_progress = progress_store.set_from_memory(memory_tracker)
         with contextlib.suppress(Exception):
             await websocket.send_json({"type": "progress", "progress": initial_progress})
@@ -254,7 +342,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if checkpoint_message:
                                 await text_input_queue.put(checkpoint_message)
                                 logger.debug(
-                                    "Updated pasta memory checkpoint for step %s",
+                                    "Updated recipe memory checkpoint for step %s",
                                     memory_tracker.current_step,
                                 )
                             with contextlib.suppress(Exception):
@@ -278,15 +366,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 with contextlib.suppress(Exception):
                     await websocket.send_json({"type": "error", "error": str(e)})
 
-    async def start_model_session_if_needed():
-        nonlocal session_started, run_session_task
+    async def start_model_session_if_needed(recipe_id: str | None):
+        nonlocal session_started, run_session_task, active_recipe_id
         if session_started and run_session_task and not run_session_task.done():
             return
+        recipe = get_recipe_config(recipe_id)
+        active_recipe_id = recipe["id"]
         session_started = True
-        run_session_task = asyncio.create_task(run_session())
-        logger.info("Gemini model session started by client request")
+        run_session_task = asyncio.create_task(run_session(active_recipe_id))
+        logger.info(
+            "Gemini model session started by client request (recipe=%s)",
+            active_recipe_id,
+        )
         with contextlib.suppress(Exception):
-            await websocket.send_json({"type": "session_started"})
+            await websocket.send_json({"type": "session_started", "recipe": active_recipe_id})
 
     async def receive_from_client():
         try:
@@ -309,7 +402,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         if isinstance(payload, dict):
                             if payload.get("type") == "start_session":
                                 logger.info("Received start_session request from client")
-                                await start_model_session_if_needed()
+                                requested_recipe = payload.get("recipe")
+                                await start_model_session_if_needed(requested_recipe)
                                 continue
                             if payload.get("type") == "image" and payload.get("data"):
                                 if not session_started:
@@ -342,7 +436,13 @@ async def websocket_endpoint(websocket: WebSocket):
             stop_event.set()
 
     with contextlib.suppress(Exception):
-        await websocket.send_json({"type": "ready", "session_started": False})
+        await websocket.send_json(
+            {
+                "type": "ready",
+                "session_started": False,
+                "default_recipe": DEFAULT_RECIPE_ID,
+            }
+        )
 
     try:
         receive_task = asyncio.create_task(receive_from_client())
