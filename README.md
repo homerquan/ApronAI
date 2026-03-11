@@ -65,6 +65,7 @@ To solve this, we combined:
 - Richer structured memory (timers, ingredient state, parallel steps).
 - More recipes and tool integrations (timers, substitutions, pantry-aware guidance).
 - Better AR-first interaction patterns for hands-busy usage.
+- Better AR overlay UI (e.g., using SLAM mapping information onto objects)
 - Production hardening: auth, analytics, and multi-user deployment posture.
 
 ## Architecture
