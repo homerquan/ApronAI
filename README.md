@@ -6,6 +6,8 @@ Built on the Gemini Live API, it listens to speech, watches the scene through th
 
 Cooking is the first environment, but the broader idea is larger: bringing multimodal AI into physical workflows where seeing, listening, remembering state, and responding in real time matters.
 
+[Demo video](https://www.youtube.com/watch?v=cj3TLLKWa4g)
+
 This project is built for [Gemini Live Agent Challenge](https://devpost.com/software/apronai)
 
 ## Inspiration
